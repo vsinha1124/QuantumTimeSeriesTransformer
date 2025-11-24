@@ -66,7 +66,7 @@ class Model(nn.Module):
 
 
         # Encoder
-        self.use_quantum_attention = False #getattr(configs, "use_quantum_attention", False)  # Check if QuantumAttention is enabled
+        self.use_quantum_attention = True #getattr(configs, "use_quantum_attention", False)  # Check if QuantumAttention is enabled
         if self.use_quantum_attention:
             print("QQQ")
         

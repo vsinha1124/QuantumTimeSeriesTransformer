@@ -4,3 +4,6 @@ mse:0.1727178543806076, mae:0.21441084146499634, dtw:-999
 long_term_forecast_weather_96_96_QCAAPatchTF$_custom_ftM_sl96_ll48_pl96_dm512_nh8_el2_dl1_df2048_expand2_dc4_fc3_ebtimeF_dtTrue_Exp_0  
 mse:0.17414525151252747, mae:0.21603472530841827, dtw:-999
 
+long_term_forecast_weather_96_96_QCAAPatchTF$_custom_ftM_sl96_ll48_pl96_dm512_nh8_el2_dl1_df2048_expand2_dc4_fc3_ebtimeF_dtTrue_Exp_0  
+mse:0.1737537682056427, mae:0.21528926491737366, dtw:-999
+
