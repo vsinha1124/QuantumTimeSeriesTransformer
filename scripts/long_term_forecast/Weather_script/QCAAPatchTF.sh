@@ -1,3 +1,12 @@
+#!/bin/bash
+
+# Quixer Quantum Attention Configuration Options:
+# --quantum_attention_mode:
+#   "full"        - All encoder layers use Quixer quantum attention
+#   "alternating" - Even layers quantum, odd layers classical (default)
+#   "classical"   - All encoder layers use classical attention
+#
+# --use_quantum_attention 0 - Disables all quantum attention (same as "classical" mode)
 
 model_name=QCAAPatchTF
 
@@ -7,7 +16,7 @@ python -u run.py \
   --root_path ./dataset/weather/ \
   --data_path weather.csv \
   --model_id weather_96_96 \
-  --model $model_name$ \
+  --model $model_name \
   --channel_independence 0 \
   --data custom \
   --features M \
@@ -22,7 +31,12 @@ python -u run.py \
   --c_out 21 \
   --des 'Exp' \
   --itr 1 \
-  --train_epochs 10
+  --train_epochs 10 \
+  --use_quantum_attention 1 \
+  --quantum_attention_mode full \
+  --n_qubits 4 \
+  --qsvt_polynomial_degree 2 \
+  --n_ansatz_layers 1
 
 # python -u run.py \
 #   --task_name long_term_forecast \

@@ -10,6 +10,9 @@ from math import sqrt
 import pennylane as qml
 import numpy as np
 
+# Import Quixer attention for quantum-enhanced transformers
+from layers.QuixerAttention_old import QuixerAttention, QuixerAttentionLayer
+
 
 class DSAttention(nn.Module):
     '''De-stationary Attention'''

@@ -5,6 +5,8 @@ import torch
 from torch import nn
 from layers.Transformer_EncDec import Encoder, EncoderLayer
 from layers.SelfAttention_Family import FullAttention, AttentionLayer, QuantumAttention
+from layers.QuixerAttention_old import QuixerAttentionLayer
+from layers.Quixer import QuixerCore, QuixerAttentionLayer_OptionA
 from layers.Embed import PatchEmbedding
 import numpy as np
 
@@ -65,27 +67,59 @@ class Model(nn.Module):
             configs.d_model, self.patch_len, stride, padding, configs.dropout)
 
 
-        # Encoder
-        self.use_quantum_attention = True #getattr(configs, "use_quantum_attention", False)  # Check if QuantumAttention is enabled
-        if self.use_quantum_attention:
-            print("QQQ")
+        # Encoder with Configurable Quixer Quantum Attention
+        self.use_quantum_attention = getattr(configs, "use_quantum_attention", True)  # Use Quixer by default
+        self.quantum_attention_mode = getattr(configs, "quantum_attention_mode", "alternating")  # Mode: full/alternating/classical
+        self.n_qubits = getattr(configs, "n_qubits", 4)  # Number of qubits for Quixer
+        self.qsvt_degree = getattr(configs, "qsvt_polynomial_degree", 2)  # QSVT polynomial degree
+        self.n_ansatz_layers = getattr(configs, "n_ansatz_layers", 1)  # PQC layers
+        
+        # Determine which layers should use quantum attention
+        def use_quantum_for_layer(layer_idx):
+            if not self.use_quantum_attention or self.quantum_attention_mode == "classical":
+                return False
+            elif self.quantum_attention_mode == "full":
+                return True
+            elif self.quantum_attention_mode == "alternating":
+                return layer_idx % 2 == 0
+            else:
+                return False
+        
+        if self.use_quantum_attention and self.quantum_attention_mode != "classical":
+            print(f"Using Quixer Quantum Attention ({self.quantum_attention_mode} mode) with {self.n_qubits} qubits, QSVT degree {self.qsvt_degree}")
+        else:
+            print("Using Classical Attention (Full)")
         
         self.encoder = Encoder(
             [
                 EncoderLayer(
-                    AttentionLayer(
-                        QuantumAttention(
-                            scale=1.0 / np.sqrt(configs.d_model),
-                            attention_dropout=configs.dropout,
-                            output_attention=configs.output_attention,
-                            #num_heads=configs.n_heads,
-                        ) if i % 2 == 0 and self.use_quantum_attention  # Use QuantumAttention in even layers
-                        else FullAttention(
+                    # Use Quixer or Classical attention based on mode
+                    # QuixerAttentionLayer(
+                    #     n_qubits=self.n_qubits,
+                    #     qsvt_polynomial_degree=self.qsvt_degree,
+                    #     n_ansatz_layers=self.n_ansatz_layers,
+                    #     d_model=configs.d_model,
+                    #     n_heads=configs.n_heads,
+                    #     mask_flag=False,
+                    #     attention_dropout=configs.dropout,
+                    #     output_attention=configs.output_attention,
+                    # ) if use_quantum_for_layer(i)
+                    QuixerAttentionLayer_OptionA(
+                        d_model=configs.d_model,
+                        n_qubits=self.n_qubits,
+                        n_tokens=configs.seq_len,                                  
+                        qsvt_degree=self.qsvt_degree,
+                        n_ansatz_layers=self.n_ansatz_layers,
+                        dev_name="lightning.gpu",                
+                        output_attention=configs.output_attention,
+                    ) if use_quantum_for_layer(i)
+                    else AttentionLayer(
+                        FullAttention(
                             mask_flag=False,
                             factor=configs.factor,
                             attention_dropout=configs.dropout,
                             output_attention=configs.output_attention,
-                        ),  # Use FullAttention in odd layers
+                        ),
                         configs.d_model,
                         configs.n_heads,
                     ),

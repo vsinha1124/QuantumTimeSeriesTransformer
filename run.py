@@ -85,6 +85,18 @@ if __name__ == '__main__':
     parser.add_argument('--seg_len', type=int, default=48,
                         help='the length of segmen-wise iteration of SegRNN')
 
+    # Quixer Quantum Attention parameters
+    parser.add_argument('--use_quantum_attention', type=int, default=1, 
+                        help='whether to use Quixer quantum attention (1: True, 0: False)')
+    parser.add_argument('--quantum_attention_mode', type=str, default='alternating', 
+                        help='quantum attention mode: "full" (all layers quantum), "alternating" (even layers quantum), "classical" (all classical)')
+    parser.add_argument('--n_qubits', type=int, default=4, 
+                        help='number of qubits for quantum circuits in Quixer attention')
+    parser.add_argument('--qsvt_polynomial_degree', type=int, default=2, 
+                        help='degree of QSVT polynomial in Quixer (e.g., 2 for quadratic)')
+    parser.add_argument('--n_ansatz_layers', type=int, default=1, 
+                        help='number of layers in the parameterized quantum circuit (Ansatz 14)')
+
     # optimization
     parser.add_argument('--num_workers', type=int, default=10, help='data loader num workers')
     parser.add_argument('--itr', type=int, default=1, help='experiments times')

@@ -7,3 +7,18 @@ mse:0.17414525151252747, mae:0.21603472530841827, dtw:-999
 long_term_forecast_weather_96_96_QCAAPatchTF$_custom_ftM_sl96_ll48_pl96_dm512_nh8_el2_dl1_df2048_expand2_dc4_fc3_ebtimeF_dtTrue_Exp_0  
 mse:0.1737537682056427, mae:0.21528926491737366, dtw:-999
 
+long_term_forecast_weather_96_96_QCAAPatchTF_custom_ftM_sl96_ll48_pl96_dm512_nh8_el2_dl1_df2048_expand2_dc4_fc3_ebtimeF_dtTrue_Exp_0  
+mse:0.1729009449481964, mae:0.21436813473701477, dtw:-999
+
+long_term_forecast_weather_96_96_QCAAPatchTF_custom_ftM_sl96_ll48_pl96_dm512_nh8_el2_dl1_df2048_expand2_dc4_fc3_ebtimeF_dtTrue_Exp_0  
+mse:0.17255614697933197, mae:0.21400383114814758, dtw:-999
+
+long_term_forecast_weather_96_96_QCAAPatchTF_custom_ftM_sl96_ll48_pl96_dm512_nh8_el2_dl1_df2048_expand2_dc4_fc3_ebtimeF_dtTrue_Exp_0  
+mse:0.1729009449481964, mae:0.21436813473701477, dtw:-999
+
+long_term_forecast_weather_96_96_QCAAPatchTF_custom_ftM_sl96_ll48_pl96_dm512_nh8_el2_dl1_df2048_expand2_dc4_fc3_ebtimeF_dtTrue_Exp_0  
+mse:0.17351503670215607, mae:0.21516944468021393, dtw:-999
+
+long_term_forecast_weather_96_96_QCAAPatchTF_custom_ftM_sl96_ll48_pl96_dm512_nh8_el2_dl1_df2048_expand2_dc4_fc3_ebtimeF_dtTrue_Exp_0  
+mse:0.17339394986629486, mae:0.21518000960350037, dtw:-999
+
