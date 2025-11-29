@@ -23,7 +23,7 @@ python -u run.py \
   --seq_len 96 \
   --label_len 48 \
   --pred_len 96 \
-  --e_layers 2 \
+  --e_layers 1 \
   --d_layers 1 \
   --factor 3 \
   --enc_in 21 \
@@ -31,11 +31,12 @@ python -u run.py \
   --c_out 21 \
   --des 'Exp' \
   --itr 1 \
-  --train_epochs 10 \
+  --train_epochs 3 \
+  --batch_size 8 \
   --use_quantum_attention 1 \
   --quantum_attention_mode full \
   --n_qubits 4 \
-  --qsvt_polynomial_degree 2 \
+  --qsvt_polynomial_degree 1 \
   --n_ansatz_layers 1
 
 # python -u run.py \

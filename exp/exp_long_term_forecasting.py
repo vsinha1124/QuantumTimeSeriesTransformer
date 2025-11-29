@@ -118,6 +118,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
 
                 # encoder - decoder
+                iter_start = time.time()
                 if self.args.use_amp:
                     with torch.cuda.amp.autocast():
                         if self.args.output_attention:
@@ -141,6 +142,8 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                     batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
                     loss = criterion(outputs, batch_y)
                     train_loss.append(loss.item())
+                
+                forward_time = time.time() - iter_start
 
                 if (i + 1) % 100 == 0:
                     print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
@@ -149,7 +152,12 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                     print('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
                     iter_count = 0
                     time_now = time.time()
+                
+                # Show timing for first 10 iterations
+                if i < 10:
+                    print(f"\t[Timing] Iter {i+1}: forward={forward_time:.3f}s", end="")
 
+                backward_start = time.time()
                 if self.args.use_amp:
                     scaler.scale(loss).backward()
                     scaler.step(model_optim)
@@ -157,6 +165,11 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 else:
                     loss.backward()
                     model_optim.step()
+                
+                backward_time = time.time() - backward_start
+                if i < 10:
+                    total_iter_time = time.time() - iter_start
+                    print(f", backward={backward_time:.3f}s, total={total_iter_time:.3f}s")
 
             print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
             train_loss = np.average(train_loss)
