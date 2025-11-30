@@ -371,7 +371,7 @@ def compare_quixer_variants(shots=2000, repeats=3):
 
     Uses the existing benchmark_circuit_builder and resource counters.
     """
-    from quixer_architecture import (
+    from quixer_benchmark import (
         build_quixer_mini_lcu,
         build_quixer_mini_with_qsvt_U,
         build_quixer_mini_with_qsvt_full_lcu,
