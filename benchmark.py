@@ -233,7 +233,7 @@ def benchmark_circuit_builder(
 # ---------- Example usage ----------
 if __name__ == "__main__":
     # import your circuit builders here (example names)
-    from quixer_mini_v3 import (
+    from quixer_benchmark import (
         build_quixer_mini_lcu,
         build_quixer_mini_with_qsvt_full_lcu,
         build_quixer_mini_with_qsvt_U,
