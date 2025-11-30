@@ -61,6 +61,12 @@ def get_device():
     if mode == "aquila" or mode == "quera_aquila":
         return AwsDevice("arn:aws:braket:us-east-1::device/qpu/quera/Aquila", aws_session=session)
 
+    if mode == "iqm_garnet":
+        return AwsDevice("arn:aws:braket:eu-north-1::device/qpu/iqm/Garnet", aws_session=session)
+
+    if mode == "iqm_emerald":
+        return AwsDevice("arn:aws:braket:eu-north-1::device/qpu/iqm/Emerald", aws_session=session)
+
     raise ValueError(f"Unknown DEVICE_MODE: {DEVICE_MODE}")
 
 
