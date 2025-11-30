@@ -362,3 +362,209 @@ def build_quixer_mini_with_qsvt_full_lcu(
         safe_measure(circ, qa, "anc")
 
     return circ
+
+
+def pretty_circuit(circ: Circuit):
+    """
+    Robust pretty-printer for Braket circuits.
+
+    Handles:
+      - Operators with/without .parameters
+      - dict parameters ({"angle": x})
+      - list/tuple parameters ([x, y, z])
+      - no parameters
+      - single- or multi-qubit targets
+    """
+    print("----- Circuit (pretty) -----")
+
+    for instr in circ.instructions:
+        op = instr.operator
+        opname = getattr(op, "name", op.__class__.__name__)
+
+        # Normalize targets (target or targets depending on SDK)
+        targets = getattr(instr, "target", getattr(instr, "targets", None))
+        if isinstance(targets, int):
+            targets = (targets,)
+        elif targets is None:
+            targets = ()
+        tstr = ", ".join(str(q) for q in targets)
+
+        # Safely get parameters if they exist
+        params = getattr(op, "parameters", None)
+        pstr = ""
+
+        if isinstance(params, dict):
+            if len(params) > 0:
+                pstr = ", ".join(f"{k}={float(v):.4f}" for k, v in params.items())
+        elif isinstance(params, (list, tuple)):
+            if len(params) > 0:
+                pstr = ", ".join(f"{float(v):.4f}" for v in params)
+        elif params is not None:
+            # Some odd non-None thing
+            pstr = str(params)
+
+        if pstr:
+            print(f"{opname:12s} | targets: [{tstr}] | {pstr}")
+        else:
+            print(f"{opname:12s} | targets: [{tstr}]")
+
+    print("-----------------------------\n")
+
+def ascii_draw_circuit(circ: Circuit):
+    """
+    Lightweight ASCII drawer for Braket circuits.
+    One row per qubit, fixed-width columns so things line up.
+
+    It understands:
+      - single-qubit gates (X, RY, RZ, etc.)
+      - two-qubit gates (CNOT-style) as a vertical line with ● and X
+      - measurement as 'M'
+    """
+    # 1. Figure out how many qubits we touch
+    max_q = -1
+    for instr in circ.instructions:
+        targets = getattr(instr, "target", getattr(instr, "targets", None))
+        if isinstance(targets, int):
+            targets = (targets,)
+        elif targets is None:
+            targets = ()
+        for t in targets:
+            try:
+                q = int(t)
+                max_q = max(max_q, q)
+            except Exception:
+                pass
+    if max_q < 0:
+        print("(empty circuit)")
+        return
+
+    n_qubits = max_q + 1
+
+    # 2. Each qubit gets a list of segments (columns). Each segment is width 3.
+    lines = [[] for _ in range(n_qubits)]
+
+    def add_column(col_segments):
+        """
+        col_segments: dict {qubit_index: segment_str_of_len_3}
+        Others get a wire '───'.
+        """
+        for q in range(n_qubits):
+            seg = col_segments.get(q, "───")
+            # pad/truncate to width 3
+            if len(seg) < 3:
+                seg = seg.center(3)
+            elif len(seg) > 3:
+                seg = seg[:3]
+            lines[q].append(seg)
+
+    # 3. Walk instructions in order, build columns
+    for instr in circ.instructions:
+        op = instr.operator
+        name = getattr(op, "name", op.__class__.__name__).upper()
+        targets = getattr(instr, "target", getattr(instr, "targets", None))
+        if isinstance(targets, int):
+            targets = (targets,)
+        elif targets is None:
+            targets = ()
+
+        # Two-qubit CNOT-like gates
+        low_name = name.lower()
+        if len(targets) == 2 and low_name in ("cnot", "cz", "xy", "xx", "yy", "zz"):
+            c, t = targets[0], targets[1]
+            c = int(c)
+            t = int(t)
+            lo, hi = min(c, t), max(c, t)
+            col = {}
+            for q in range(lo, hi + 1):
+                if q == c:
+                    col[q] = "─●─"
+                elif q == t:
+                    col[q] = "─X─"
+                else:
+                    col[q] = "─│─"
+            add_column(col)
+            continue
+
+        # Measurement gates: show as M on their target
+        if "MEAS" in name or "MEASURE" in name:
+            col = {}
+            for q in targets:
+                q = int(q)
+                col[q] = "─M─"
+            add_column(col)
+            continue
+
+        # Single-qubit (or treated-as-separate) gates
+        # We'll just put the 3-char op name on each target, and wires elsewhere.
+        label = name
+        if len(label) > 3:
+            label = label[:3]
+        col = {}
+        for q in targets:
+            q = int(q)
+            col[q] = label
+        add_column(col)
+
+    # 4. Print result
+    print("===== ASCII circuit =====")
+    for q in range(n_qubits):
+        wire = "".join(lines[q]) if lines[q] else ""
+        print(f"q{q}: {wire}")
+    print("=========================\n")
+
+
+if __name__ == "__main__":
+    # Quick demo parameters
+    token0_angles = {"a0": 0.3,  "a1": -0.2, "b0": 0.5,  "b1": -0.1}
+    token1_angles = {"a0": -0.4, "a1": 0.6,  "b0": -0.7, "b1": 0.2}
+    tokenU_angles = {"a0": 0.3, "a1": 0.5, "b0": -0.2, "b1": 0.4}
+    gamma = 0.7
+    encode_angles = {"x0": 0.2, "x1": -0.1}
+    qsvt_phis = (0.3, 0.9, -0.4)
+
+    print("\nBuilding LCU-only Quixer-Mini circuit...\n")
+    circ_lcu = build_quixer_mini_lcu(
+        token0_angles, token1_angles, gamma,
+        encode_angles=encode_angles, measure_all=True
+    )
+    # pretty_circuit(circ_lcu)
+    # ascii_draw_circuit(circ_lcu)
+
+    print("Building QSVT-on-U (inspired) circuit...\n")
+    circ_qU = build_quixer_mini_with_qsvt_U(
+        tokenU_angles,
+        encode_angles=encode_angles,
+        qsvt_phis=qsvt_phis,
+        measure_all=True,
+    )
+    # pretty_circuit(circ_qU)
+    # ascii_draw_circuit(circ_qU)
+
+    print("Building QSVT-on-A (LCU) (inspired) circuit...\n")
+    circ_qA = build_quixer_mini_with_qsvt_full_lcu(
+        token0_angles, token1_angles, gamma,
+        encode_angles=encode_angles,
+        qsvt_phis=qsvt_phis,
+        measure_all=True,
+    )
+    # pretty_circuit(circ_qA)
+    # ascii_draw_circuit(circ_qA)
+
+    try:
+        from braket.devices import LocalSimulator
+        sim = LocalSimulator()
+
+        print("Running LCU circuit on LocalSimulator:")
+        res = sim.run(circ_lcu, shots=200).result().measurement_counts
+        print("Counts:", res, "\n")
+
+        print("Running QSVT(U) circuit on LocalSimulator:")
+        res = sim.run(circ_qU, shots=200).result().measurement_counts
+        print("Counts:", res, "\n")
+
+        print("Running QSVT(A) circuit on LocalSimulator:")
+        res = sim.run(circ_qA, shots=200).result().measurement_counts
+        print("Counts:", res, "\n")
+
+    except Exception as e:
+        print("LocalSimulator unavailable:", e)
