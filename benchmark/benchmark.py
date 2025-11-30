@@ -28,51 +28,38 @@ DEVICE_MODE = "local"
 
 def get_device():
     """
-    Returns a Braket device object based on DEVICE_MODE,
-    with automatic region routing.
+    Return the correct device based on DEVICE_MODE.
+    Compatible with the new Braket SDK (no region= argument).
     """
+    mode = DEVICE_MODE.lower()
 
-    # Local simulator: no region needed
-    if DEVICE_MODE == "local":
+    # Local simulator (no session needed)
+    if mode == "local":
         return LocalSimulator()
 
-    # AWS-managed simulators (pick a convenient region)
-    if DEVICE_MODE == "sv1":
-        session = AwsSession(region="us-east-1")
-        return AwsDevice(
-            "arn:aws:braket:::device/quantum-simulator/amazon/sv1",
-            aws_session=session,
-        )
+    # Shared session for all cloud devices (region now set by ARN itself)
+    session = AwsSession()
 
-    if DEVICE_MODE == "tn1":
-        session = AwsSession(region="us-east-1")
-        return AwsDevice(
-            "arn:aws:braket:::device/quantum-simulator/amazon/tn1",
-            aws_session=session,
-        )
+    if mode == "sv1":
+        return AwsDevice("arn:aws:braket:::device/quantum-simulator/amazon/sv1", aws_session=session)
 
-    # IonQ hardware (us-east-1)
-    if DEVICE_MODE == "ionq_aria":
-        session = AwsSession(region="us-east-1")
-        return AwsDevice(
-            "arn:aws:braket:us-east-1::device/qpu/ionq/Aria-1",
-            aws_session=session,
-        )
+    if mode == "tn1":
+        return AwsDevice("arn:aws:braket:::device/quantum-simulator/amazon/tn1", aws_session=session)
 
-    if DEVICE_MODE == "ionq_forte":
-        session = AwsSession(region="us-east-1")
-        return AwsDevice(
-            "arn:aws:braket:us-east-1::device/qpu/ionq/Forte",
-            aws_session=session,
-        )
+    if mode == "ionq_aria":
+        return AwsDevice("arn:aws:braket:us-east-1::device/qpu/ionq/Aria-1", aws_session=session)
 
-    # AQT Ibex-Q1 (eu-north-1)
-    if DEVICE_MODE == "aqt_ibex":
-        session = AwsSession(region="eu-north-1")
-        return AwsDevice(
-            "arn:aws:braket:eu-north-1::device/qpu/aqt/Ibex-Q1",
-            aws_session=session,
-        )
+    if mode == "ionq_forte":
+        return AwsDevice("arn:aws:braket:us-east-1::device/qpu/ionq/Forte", aws_session=session)
+
+    if mode == "aqt_ibex":
+        return AwsDevice("arn:aws:braket:eu-north-1::device/qpu/aqt/aqt-qpu", aws_session=session)
+
+    if mode == "anka3" or mode == "ankaa3" or mode == "rigetti_ankaa3":
+        return AwsDevice("arn:aws:braket:us-west-2::device/qpu/rigetti/Ankaa-3", aws_session=session)
+
+    if mode == "aquila" or mode == "quera_aquila":
+        return AwsDevice("arn:aws:braket:us-east-1::device/qpu/quera/Aquila", aws_session=session)
 
     raise ValueError(f"Unknown DEVICE_MODE: {DEVICE_MODE}")
 
