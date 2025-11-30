@@ -169,3 +169,4 @@ if __name__ == "__main__":
     quantum_benchmark = QuantumArchitectureBenchmark(device_mode="local")
     quantum_results = quantum_benchmark.benchmark_quantum_architectures(shots=1000, repeats=3)
     quantum_benchmark.generate_quantum_report()
+    quantum_benchmark.export_quantum_results_to_csv("quantum_results.csv")
