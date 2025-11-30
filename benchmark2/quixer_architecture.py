@@ -1,4 +1,4 @@
-# quixer_benchmark.py  (a.k.a. quixer_mini_v4 core circuits)
+# quixer_architecture.py  (a.k.a. quixer_mini_v4 core circuits)
 # ======================================================
 # Quixer-Mini variants:
 #   1) LCU-only block:      A = b0 U0 + b1 U1   (linear)

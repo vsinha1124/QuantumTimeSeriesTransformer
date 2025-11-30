@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from braket.circuits import Circuit
 from benchmark import benchmark_circuit_builder, get_device
-from quixer_benchmark import (
+from quixer_architecture import (
     build_quixer_mini_lcu,
     build_quixer_mini_with_qsvt_U,
     build_quixer_mini_with_qsvt_full_lcu
