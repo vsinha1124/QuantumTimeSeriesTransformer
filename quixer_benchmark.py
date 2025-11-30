@@ -1,15 +1,34 @@
-# quixer_mini_v3.py
+# quixer_mini_v4.py
 # ======================================================
 # Quixer-Mini variants on AWS Braket LocalSimulator:
 #   1) LCU-only block:      A = b0 U0 + b1 U1   (linear)
-#   2) QSVT(U):             nonlinear block on a single token unitary U
-#   3) QSVT(A=LCU):         nonlinear block on full LCU gadget A
+#   2) QSVT(U)-inspired:    nonlinear block on a single unitary U
+#   3) QSVT(A)-inspired:    nonlinear block on full LCU gadget A
 #
-# No AWS account needed; uses local simulator only.
+# Uses correct CRY decomposition and proper A / A† adjoints.
+# Runs entirely on LocalSimulator (no AWS creds needed).
 
 from braket.circuits import Circuit
 from braket.devices import LocalSimulator
 import numpy as np
+
+
+# ---------------------------------------------------------
+# 0. Utility: controlled-RY via standard CRY decomposition
+# ---------------------------------------------------------
+def cry(circ: Circuit, control: int, target: int, theta: float):
+    """
+    Apply a controlled-RY(theta) gate with given control and target
+    using the standard decomposition:
+
+        CRY(theta) = RY(theta/2) · CNOT · RY(-theta/2) · CNOT
+    """
+    half = theta / 2.0
+    circ.ry(target, half)
+    circ.cnot(control, target)
+    circ.ry(target, -half)
+    circ.cnot(control, target)
+    return circ
 
 
 # ---------------------------------------------------------
@@ -25,8 +44,7 @@ def add_token_pqc(circ, q0, q1, angles, control=None):
         RY(b0) on q0
         RY(b1) on q1
 
-    If control is not None, the RY gates are controlled by `control`.
-    CNOT is left uncontrolled (shared structure for all tokens).
+    If control is not None, each RY is implemented as CRY(control -> target).
     """
     a0, a1 = angles["a0"], angles["a1"]
     b0, b1 = angles["b0"], angles["b1"]
@@ -35,18 +53,18 @@ def add_token_pqc(circ, q0, q1, angles, control=None):
         circ.ry(q0, a0)
         circ.ry(q1, a1)
     else:
-        circ.ry(q0, a0, control=control)
-        circ.ry(q1, a1, control=control)
+        cry(circ, control, q0, a0)
+        cry(circ, control, q1, a1)
 
-    # Simple entangling layer
+    # Entangling layer (uncontrolled)
     circ.cnot(q0, q1)
 
     if control is None:
         circ.ry(q0, b0)
         circ.ry(q1, b1)
     else:
-        circ.ry(q0, b0, control=control)
-        circ.ry(q1, b1, control=control)
+        cry(circ, control, q0, b0)
+        cry(circ, control, q1, b1)
 
     return circ
 
@@ -54,29 +72,29 @@ def add_token_pqc(circ, q0, q1, angles, control=None):
 def add_token_pqc_dagger(circ, q0, q1, angles, control=None):
     """
     Adjoint of add_token_pqc.
-    Reverse order of gates, negate rotation angles.
+    We reverse the order of gates and negate angles.
     """
     a0, a1 = angles["a0"], angles["a1"]
     b0, b1 = angles["b0"], angles["b1"]
 
-    # Reverse of second layer RYs
+    # Inverse of second-layer RY/CRY
     if control is None:
         circ.ry(q1, -b1)
         circ.ry(q0, -b0)
     else:
-        circ.ry(q1, -b1, control=control)
-        circ.ry(q0, -b0, control=control)
+        cry(circ, control, q1, -b1)
+        cry(circ, control, q0, -b0)
 
-    # Reverse of CNOT (self-inverse)
+    # Inverse of CNOT (self-inverse)
     circ.cnot(q0, q1)
 
-    # Reverse of first layer RYs
+    # Inverse of first-layer RY/CRY
     if control is None:
         circ.ry(q1, -a1)
         circ.ry(q0, -a0)
     else:
-        circ.ry(q1, -a1, control=control)
-        circ.ry(q0, -a0, control=control)
+        cry(circ, control, q1, -a1)
+        cry(circ, control, q0, -a0)
 
     return circ
 
@@ -90,13 +108,13 @@ def apply_lcu_A(circ, q0, q1, qc, gamma, token0_angles, token1_angles):
 
         A ~ b0 U0 + b1 U1,  with  b0 = cos(gamma), b1 = sin(gamma)
 
-    This is the SAME structure as the LCU-only circuit, but WITHOUT
-    measurements or postselection. It can be reused inside QSVT blocks.
+    SAME structure as the LCU-only circuit, but WITHOUT measurements
+    or postselection. This can be reused inside QSVT-inspired blocks.
     """
     # Prepare b0|0> + b1|1> on qc
     circ.ry(qc, 2.0 * gamma)
 
-    # Controlled U0 when qc = 0 (X sandwich trick)
+    # Controlled U0 when qc = 0  (X sandwich)
     circ.x(qc)
     add_token_pqc(circ, q0, q1, token0_angles, control=qc)
     circ.x(qc)
@@ -104,7 +122,7 @@ def apply_lcu_A(circ, q0, q1, qc, gamma, token0_angles, token1_angles):
     # Controlled U1 when qc = 1
     add_token_pqc(circ, q0, q1, token1_angles, control=qc)
 
-    # Uncompute qc superposition
+    # Uncompute superposition
     circ.ry(qc, -2.0 * gamma)
 
     return circ
@@ -112,20 +130,26 @@ def apply_lcu_A(circ, q0, q1, qc, gamma, token0_angles, token1_angles):
 
 def apply_lcu_A_dagger(circ, q0, q1, qc, gamma, token0_angles, token1_angles):
     """
-    Adjoint of apply_lcu_A: reverse the sequence and invert angles.
+    Adjoint of apply_lcu_A.
+    This is:
+
+        A† = RY(+2γ)
+             U1†
+             X U0† X
+             RY(-2γ)
     """
-    # Inverse of final RY(-2 gamma) -> RY(+2 gamma)
+    # Inverse of final RY(-2γ) -> RY(+2γ)
     circ.ry(qc, 2.0 * gamma)
 
-    # Inverse of U1 block: controlled-U1† when qc = 1
+    # Inverse of "U1" block: controlled-U1† when qc = 1
     add_token_pqc_dagger(circ, q0, q1, token1_angles, control=qc)
 
-    # Inverse of U0 block: controlled-U0† when qc = 0
+    # Inverse of "X U0 X" block: X · U0†(qc=0) · X
     circ.x(qc)
     add_token_pqc_dagger(circ, q0, q1, token0_angles, control=qc)
     circ.x(qc)
 
-    # Inverse of initial RY(2 gamma) -> RY(-2 gamma)
+    # Inverse of initial RY(2γ) -> RY(-2γ)
     circ.ry(qc, -2.0 * gamma)
 
     return circ
@@ -193,7 +217,7 @@ def build_quixer_mini_with_qsvt_U(
     4-qubit circuit:
 
         q0, q1 : data
-        q2     : ancilla for QSVT-style block
+        q2     : ancilla for QSVT-inspired block
 
     Use ONE token PQC U on (q0,q1) as "A", then apply a 1-step
     QSVT-inspired block with ancilla on q2:
@@ -204,7 +228,8 @@ def build_quixer_mini_with_qsvt_U(
         controlled-U† on data (control = anc)
         Rz(phi2) on anc
 
-    This implements a small polynomial p(U) ~ a U + b U^2.
+    This implements a small polynomial-like transform p(U).
+    (Not formal QSVT; just QSVT-inspired.)
     """
     circ = Circuit()
     q0, q1 = 0, 1
@@ -251,9 +276,9 @@ def build_quixer_mini_with_qsvt_full_lcu(
 
         q0, q1 : data
         q2     : LCU control (for A = b0 U0 + b1 U1)
-        q3     : ancilla for QSVT-style block
+        q3     : ancilla for QSVT-inspired block
 
-    QSVT-inspired structure (simplified):
+    QSVT-inspired structure (not formal QSVT):
 
         - Encode input on data
         - Apply A once (LCU block)
@@ -263,8 +288,8 @@ def build_quixer_mini_with_qsvt_full_lcu(
         - Apply A† (LCU dagger)
         - Rz(phi2) on ancilla
 
-    For a fully rigorous QSVT, ancilla would strictly control A and A†;
-    here we keep it "inspired" but still capture a polynomial-in-A flavor.
+    This captures a "polynomial in A" flavor, still small enough
+    for NISQ testing.
     """
     circ = Circuit()
     q0, q1 = 0, 1
@@ -278,7 +303,7 @@ def build_quixer_mini_with_qsvt_full_lcu(
         circ.ry(q0, encode_angles.get("x0", 0.0))
         circ.ry(q1, encode_angles.get("x1", 0.0))
 
-    # 1) Apply A once (linear attention-like mixing)
+    # 1) Apply A once (linear attention-ish)
     apply_lcu_A(
         circ,
         q0=q0,
@@ -326,7 +351,7 @@ def build_quixer_mini_with_qsvt_full_lcu(
 
 
 # --------------------------------------------
-# 6. Helpers: run locally & compute <Z> values
+# 6. Helpers: run locally & handle counts
 # --------------------------------------------
 def run_local(circuit, shots=4000):
     sim = LocalSimulator()
@@ -335,14 +360,51 @@ def run_local(circuit, shots=4000):
     return result.measurement_counts
 
 
-def z_expectation_from_counts(counts, bit_index):
+def flatten_counts(measurement_counts):
+    """
+    Normalize measurement_counts into {bitstring(str) -> count(int)}.
+
+    Handles:
+      - flat dict: {'000': 10, '011': 5}
+      - nested dict: {('d0','d1'): {('0','1'): 7, ...}}
+    """
+    # Already flat (str -> int)?
+    some_key = next(iter(measurement_counts))
+    some_val = measurement_counts[some_key]
+
+    if isinstance(some_key, str) and isinstance(some_val, int):
+        return measurement_counts
+
+    # Nested dict keyed by classical register names
+    flat = {}
+    for _, inner in measurement_counts.items():
+        if isinstance(inner, dict):
+            for bits, c in inner.items():
+                # bits might be a tuple of '0'/'1'
+                if isinstance(bits, tuple):
+                    bitstring = "".join(bits)
+                else:
+                    bitstring = str(bits)
+                flat[bitstring] = flat.get(bitstring, 0) + c
+        else:
+            # Fallback: treat outer key as bits
+            key = some_key
+            if isinstance(key, tuple):
+                bitstring = "".join(key)
+            else:
+                bitstring = str(key)
+            flat[bitstring] = flat.get(bitstring, 0) + some_val
+    return flat
+
+
+def z_expectation_from_counts(flat_counts, bit_index):
     """
     <Z> = P(0) - P(1) on given bit position in the bitstring.
-    Assumes bitstrings like '000', '101', etc. in qubit index order.
+    Assumes bitstring[bit_index] is '0'/'1'.
     """
     total = 0
     z = 0
-    for bitstring, c in counts.items():
+    for bitstring, c in flat_counts.items():
         bit = bitstring[bit_index]
         total += c
         z += c if bit == "0" else -c
@@ -372,49 +434,56 @@ if __name__ == "__main__":
         encode_angles=encode_angles,
     )
     print(circ_lcu)
-    counts_lcu = run_local(circ_lcu, shots=4000)
-    print("LCU counts:", counts_lcu)
+    raw_lcu = run_local(circ_lcu, shots=4000)
+    flat_lcu = flatten_counts(raw_lcu)
+    print("LCU flat counts:", flat_lcu)
 
-    # Postselect on lcu-control = 0 (last bit)
-    post_lcu = {b: c for b, c in counts_lcu.items() if b[-1] == "0"}
+    # Postselect on lcu-control = 0 (bit 2 = '0')
+    total_shots = sum(flat_lcu.values())
+    post_lcu = {b: c for b, c in flat_lcu.items() if b[-1] == "0"}
+    succ_shots = sum(post_lcu.values())
+    p_success = succ_shots / total_shots if total_shots > 0 else 0.0
+    print(f"LCU postselection success probability: {p_success:.3f}")
+
     z0_lcu = z_expectation_from_counts(post_lcu, 0)
     z1_lcu = z_expectation_from_counts(post_lcu, 1)
     print("<Z0>_LCU =", z0_lcu)
     print("<Z1>_LCU =", z1_lcu)
     print()
 
-    # 2) QSVT on single U
-    print("=== QSVT-on-U Quixer-Mini ===")
-    circ_qsvt_U = build_quixer_mini_with_qsvt_U(
+    # 2) QSVT-on-U (inspired)
+    print("=== QSVT-on-U (inspired) ===")
+    circ_qU = build_quixer_mini_with_qsvt_U(
         tokenU_angles,
         encode_angles=encode_angles,
         qsvt_phis=qsvt_phis,
     )
-    print(circ_qsvt_U)
-    counts_qsvt_U = run_local(circ_qsvt_U, shots=4000)
-    print("QSVT(U) counts:", counts_qsvt_U)
-    z0_qU = z_expectation_from_counts(counts_qsvt_U, 0)
-    z1_qU = z_expectation_from_counts(counts_qsvt_U, 1)
+    print(circ_qU)
+    raw_qU = run_local(circ_qU, shots=4000)
+    flat_qU = flatten_counts(raw_qU)
+    print("QSVT(U) flat counts:", flat_qU)
+    z0_qU = z_expectation_from_counts(flat_qU, 0)
+    z1_qU = z_expectation_from_counts(flat_qU, 1)
     print("<Z0>_QSVT(U) =", z0_qU)
     print("<Z1>_QSVT(U) =", z1_qU)
     print()
 
-    # 3) QSVT-inspired on full LCU A
-    print("=== QSVT-on-A(LCU) Quixer-Mini ===")
-    circ_qsvt_A = build_quixer_mini_with_qsvt_full_lcu(
+    # 3) QSVT-on-A (LCU, inspired)
+    print("=== QSVT-on-A(LCU) (inspired) ===")
+    circ_qA = build_quixer_mini_with_qsvt_full_lcu(
         token0_angles,
         token1_angles,
         gamma,
         encode_angles=encode_angles,
         qsvt_phis=qsvt_phis,
     )
-    print(circ_qsvt_A)
-    counts_qsvt_A = run_local(circ_qsvt_A, shots=4000)
-    print("QSVT(A) counts:", counts_qsvt_A)
+    print(circ_qA)
+    raw_qA = run_local(circ_qA, shots=4000)
+    flat_qA = flatten_counts(raw_qA)
+    print("QSVT(A) flat counts:", flat_qA)
 
-    # Here bit ordering for QSVT(A) is:
-    #   bit 0 -> d0, bit 1 -> d1, bit 2 -> lcu, bit 3 -> anc
-    z0_qA = z_expectation_from_counts(counts_qsvt_A, 0)
-    z1_qA = z_expectation_from_counts(counts_qsvt_A, 1)
+    # Bit layout here: [d0, d1, lcu, anc] -> indices 0,1,2,3
+    z0_qA = z_expectation_from_counts(flat_qA, 0)
+    z1_qA = z_expectation_from_counts(flat_qA, 1)
     print("<Z0>_QSVT(A) =", z0_qA)
     print("<Z1>_QSVT(A) =", z1_qA)
