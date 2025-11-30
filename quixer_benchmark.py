@@ -197,9 +197,9 @@ def build_quixer_mini_lcu(
     )
 
     if measure_all:
-        circ.measure(q0, "d0")
-        circ.measure(q1, "d1")
-        circ.measure(qc, "lcu")
+        circ.measure(q0)
+        circ.measure(q1)
+        circ.measure(qc)
 
     return circ
 
@@ -253,9 +253,9 @@ def build_quixer_mini_with_qsvt_U(
     circ.rz(qa, phi2)
 
     if measure_all:
-        circ.measure(q0, "d0")
-        circ.measure(q1, "d1")
-        circ.measure(qa, "anc")
+        circ.measure(q0)
+        circ.measure(q1)
+        circ.measure(qa)
 
     return circ
 
@@ -342,10 +342,10 @@ def build_quixer_mini_with_qsvt_full_lcu(
     circ.rz(qa, phi2)
 
     if measure_all:
-        circ.measure(q0, "d0")
-        circ.measure(q1, "d1")
-        circ.measure(qc, "lcu")
-        circ.measure(qa, "anc")
+        circ.measure(q0)
+        circ.measure(q1)
+        circ.measure(qc)
+        circ.measure(qa)
 
     return circ
 

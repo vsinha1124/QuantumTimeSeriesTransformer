@@ -217,7 +217,7 @@ def benchmark_circuit_builder(
 
     # write detailed rows to CSV (append mode)
     fieldnames = list(rows[0].keys())
-    with open(csv_out, "a", newline="") as f:
+    with open(csv_out, "a+", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         # write header only if empty file
         f.seek(0)
