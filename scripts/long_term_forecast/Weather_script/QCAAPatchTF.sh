@@ -36,7 +36,7 @@ python -u run.py \
   --use_quantum_attention 1 \
   --quantum_attention_mode full \
   --n_qubits 4 \
-  --qsvt_polynomial_degree 1 \
+  --qsvt_polynomial_degree 2 \
   --n_ansatz_layers 1
 
 # python -u run.py \

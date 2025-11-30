@@ -231,10 +231,9 @@ class QuixerCore(nn.Module):
         else:
             init_state = monomial_state / norm
 
-        # ALL ON GPU - no CPU transfer!
         lcu_state = torch.zeros_like(init_state)
         
-        # SPEEDUP 1: Limit tokens for speed (otherwise too many matrix builds)
+        # Limit tokens for speed (otherwise too many matrix builds)
         L_limit = min(L_used, 4)  # Reduced from 8 to 4 for 2x speedup
         
         for t in range(L_limit):
@@ -243,7 +242,7 @@ class QuixerCore(nn.Module):
             # Build unitary matrix on GPU
             U = self._build_unitary_matrix_gpu(params_t, device)
             
-            # Apply unitary: evolved = U @ init_state (FAST on GPU)
+            # Apply unitary: evolved = U @ init_state 
             evolved = U @ init_state
             
             # Accumulate weighted by LCU coefficient
@@ -391,10 +390,10 @@ class QuixerAttentionLayer_OptionA(nn.Module):
         # Broadcast to all positions
         global_vecs_expanded = global_vecs.unsqueeze(1).expand(B, L, D)  # [B, L, D]
 
-        # Option A: output = values + global_context
+        # output = values + global_context
         out = values + global_vecs_expanded
 
-        attn = None  # we have no meaningful attention map here
+        attn = None  # no explicit attention weights
         if self.output_attention:
             # You can create a dummy attention tensor if your training loop expects it
             attn = torch.zeros(B, 1, L, L, device=device)
