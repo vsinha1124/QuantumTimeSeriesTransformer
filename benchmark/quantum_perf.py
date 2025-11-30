@@ -4,9 +4,9 @@
 import time
 import json
 from datetime import datetime
-from benchmark.benchmark import get_device, resource_counts_from_circuit
+from benchmark import get_device, resource_counts_from_circuit
 
-from benchmark.quixer_architecture import (
+from quixer_architecture import (
     build_quixer_mini_lcu,
     build_quixer_mini_with_qsvt_U,
     build_quixer_mini_with_qsvt_full_lcu
