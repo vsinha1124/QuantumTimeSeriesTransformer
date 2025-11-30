@@ -42,7 +42,8 @@ def data_provider(args, flag):
             batch_size=batch_size,
             shuffle=shuffle_flag,
             num_workers=args.num_workers,
-            drop_last=drop_last)
+            drop_last=drop_last,
+            pin_memory=True)
         return data_set, data_loader
     elif args.task_name == 'classification':
         drop_last = False
@@ -58,8 +59,8 @@ def data_provider(args, flag):
             shuffle=shuffle_flag,
             num_workers=args.num_workers,
             drop_last=drop_last,
-            collate_fn=lambda x: collate_fn(x, max_len=args.seq_len)
-        )
+            collate_fn=lambda x: collate_fn(x, max_len=args.seq_len),
+            pin_memory=True)
         return data_set, data_loader
     else:
         if args.data == 'm4':
@@ -82,5 +83,6 @@ def data_provider(args, flag):
             batch_size=batch_size,
             shuffle=shuffle_flag,
             num_workers=args.num_workers,
-            drop_last=drop_last)
+            drop_last=drop_last,
+            pin_memory=True)
         return data_set, data_loader

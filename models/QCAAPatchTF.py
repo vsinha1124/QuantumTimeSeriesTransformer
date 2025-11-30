@@ -111,7 +111,7 @@ class Model(nn.Module):
                         n_tokens=96,                                  
                         qsvt_degree=self.qsvt_degree,
                         n_ansatz_layers=self.n_ansatz_layers,
-                        dev_name="lightning.gpu",                
+                        dev_name="lightning.qubit",                
                         output_attention=configs.output_attention,
                     ) if use_quantum_for_layer(i)
                     else AttentionLayer(

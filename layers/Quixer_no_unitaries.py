@@ -92,16 +92,7 @@ class QuixerCore(nn.Module):
         self.ff_params = nn.Parameter(torch.randn(self.n_pqc_params))
 
         # PennyLane device selection
-        try:
-            self.dev = qml.device(dev_name, wires=self.n_qubits, shots=None)
-        except Exception:
-            try:
-                self.dev = qml.device("lightning.gpu", wires=self.n_qubits, shots=None)
-            except Exception:
-                try:
-                    self.dev = qml.device("lightning.qubit", wires=self.n_qubits, shots=None)
-                except Exception:
-                    self.dev = qml.device("default.qubit", wires=self.n_qubits, shots=None)
+        self.dev = qml.device("default.qubit", wires=self.n_qubits, shots=None)
 
         self.ansatz = ansatz_14_pennylane(self.n_qubits, self.n_ansatz_layers)
 
@@ -187,6 +178,7 @@ class QuixerCore(nn.Module):
         
         # Stack results: [L_used, dim]
         evolved_states = torch.stack(evolved_states)
+        evolved_states = evolved_states.to(device)
 
         # Linear combination with LCU coefficients
         lcu_state = torch.einsum("td,t->d", evolved_states, lcu_coeffs)

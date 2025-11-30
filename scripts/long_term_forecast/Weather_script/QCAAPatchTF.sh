@@ -32,11 +32,12 @@ python -u run.py \
   --des 'Exp' \
   --itr 1 \
   --train_epochs 3 \
-  --batch_size 8 \
+  --batch_size 16 \
+  --num_workers 4 \
   --use_quantum_attention 1 \
   --quantum_attention_mode full \
-  --n_qubits 4 \
-  --qsvt_polynomial_degree 2 \
+  --n_qubits 3 \
+  --qsvt_polynomial_degree 1 \
   --n_ansatz_layers 1
 
 # python -u run.py \
