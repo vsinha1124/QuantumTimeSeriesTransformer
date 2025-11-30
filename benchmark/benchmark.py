@@ -377,28 +377,160 @@ def benchmark_circuit_builder(
     return summary, rows
 
 
-# ---------- Example usage ----------
-if __name__ == "__main__":
+def compare_quixer_variants(shots=2000, repeats=3):
+    """
+    Run LCU, QSVT-on-U, and QSVT-on-full-LCU variants side by side and
+    print a small comparison table.
+
+    Uses the existing benchmark_circuit_builder and resource counters.
+    """
     from quixer_benchmark import (
         build_quixer_mini_lcu,
-        build_quixer_mini_with_qsvt_full_lcu,
         build_quixer_mini_with_qsvt_U,
+        build_quixer_mini_with_qsvt_full_lcu,
     )
 
-    builder = build_quixer_mini_lcu
-    kwargs = {
-        "token0_angles": {"a0": 0.3, "a1": -0.2, "b0": 0.5, "b1": -0.1},
-        "token1_angles": {"a0": -0.4, "a1": 0.6, "b0": -0.7, "b1": 0.2},
-        "gamma": 0.7,
-        "encode_angles": {"x0": 0.2, "x1": -0.1},
-        "measure_all": True,
-    }
-    summary, rows = benchmark_circuit_builder(
-        builder,
-        kwargs,
-        shots=2000,
-        repeats=3,
-        postselect_bit=-1,
-        csv_out="bench_lcu.csv",
+    # Shared toy parameters (you can tweak these)
+    token0_angles = {"a0": 0.3, "a1": -0.2, "b0": 0.5, "b1": -0.1}
+    token1_angles = {"a0": -0.4, "a1": 0.6, "b0": -0.7, "b1": 0.2}
+    # For the single-unitary QSVT(U) variant, just pick one token block
+    tokenU_angles = token0_angles
+    gamma = 0.7
+    encode_angles = {"x0": 0.2, "x1": -0.1}
+    qsvt_phis = (0.3, 0.9, -0.4)
+
+    variants = [
+        (
+            "LCU",
+            build_quixer_mini_lcu,
+            {
+                "token0_angles": token0_angles,
+                "token1_angles": token1_angles,
+                "gamma": gamma,
+                "encode_angles": encode_angles,
+                "measure_all": True,
+            },
+            None,  # let benchmark_circuit_builder auto-detect 'lcu' for postselection
+            "bench_lcu.csv",
+        ),
+        (
+            "QSVT_U",
+            build_quixer_mini_with_qsvt_U,
+            {
+                "token_angles": tokenU_angles,
+                "encode_angles": encode_angles,
+                "qsvt_phis": qsvt_phis,
+                "measure_all": True,
+            },
+            None,  # no 'lcu' label here → no postselection
+            "bench_qsvt_u.csv",
+        ),
+        (
+            "QSVT_A",
+            build_quixer_mini_with_qsvt_full_lcu,
+            {
+                "token0_angles": token0_angles,
+                "token1_angles": token1_angles,
+                "gamma": gamma,
+                "encode_angles": encode_angles,
+                "qsvt_phis": qsvt_phis,
+                "measure_all": True,
+            },
+            None,  # auto-detect 'lcu' label for postselection
+            "bench_qsvt_a.csv",
+        ),
+    ]
+
+    results = []
+
+    for label, builder_fn, kwargs, post_bit, csv_name in variants:
+        print(f"\n=== Running variant: {label} ({builder_fn.__name__}) ===")
+        summary, rows = benchmark_circuit_builder(
+            builder_fn,
+            kwargs,
+            shots=shots,
+            repeats=repeats,
+            postselect_bit=post_bit,
+            csv_out=csv_name,
+        )
+
+        # Use the first row as a representative resource snapshot
+        r0 = rows[0]
+
+        results.append(
+            {
+                "name": label,
+                "variant_fn": builder_fn.__name__,
+                "n_qubits": r0.get("n_qubits", ""),
+                "one_q": r0.get("one_q_gates", ""),
+                "two_q": r0.get("two_q_gates_est", ""),
+                "p_succ": summary["mean_postselect_prob"],
+                "p_succ_std": summary["std_postselect_prob"],
+                "wall": summary["mean_wall_time_s"],
+                "wall_std": summary["std_wall_time_s"],
+                "throughput": summary["mean_throughput"],
+                "throughput_std": summary["std_throughput"],
+                "z0_mean": r0.get("z0_mean", float("nan")),
+                "z0_sem": r0.get("z0_sem", float("nan")),
+                "shots_0_01": r0.get("shots_needed_for_0.01_on_z0", ""),
+            }
+        )
+
+    # Print comparison table
+    print("\n=== Quixer-Mini variant comparison ===")
+    header = (
+        "Variant",
+        "Qubits",
+        "1Q",
+        "2Q",
+        "p_succ",
+        "⟨Z0⟩±SEM",
+        "Time(s)",
+        "Thrupt",
+        "Shots@0.01",
     )
-    print("Summary:", summary)
+    print(
+        "{:10} {:6} {:4} {:4} {:8} {:14} {:8} {:10} {:12}".format(*header)
+    )
+    for res in results:
+        print(
+            "{name:10} {n_qubits!s:6} {one_q!s:4} {two_q!s:4} "
+            "{p_succ:8.4f} "
+            "{z0_mean:6.3f}±{z0_sem:5.3f} "
+            "{wall:8.3f} {throughput:10.1f} {shots_0_01!s:12}".format(**res)
+        )
+
+    return results
+
+
+# ---------- Main function ----------
+if __name__ == "__main__":
+    TEST_ALL_CIRCUITS = True
+
+    if TEST_ALL_CIRCUITS:
+        compare_quixer_variants(shots=2000, repeats=3)
+
+    else:
+        from quixer_benchmark import (
+            build_quixer_mini_lcu,
+            build_quixer_mini_with_qsvt_full_lcu,
+            build_quixer_mini_with_qsvt_U,
+        )
+
+        builder = build_quixer_mini_lcu
+        kwargs = {
+            "token0_angles": {"a0": 0.3, "a1": -0.2, "b0": 0.5, "b1": -0.1},
+            "token1_angles": {"a0": -0.4, "a1": 0.6, "b0": -0.7, "b1": 0.2},
+            "gamma": 0.7,
+            "encode_angles": {"x0": 0.2, "x1": -0.1},
+            "measure_all": True,
+        }
+        summary, rows = benchmark_circuit_builder(
+            builder,
+            kwargs,
+            shots=2000,
+            repeats=3,
+            postselect_bit=-1,
+            csv_out="bench_lcu.csv",
+        )
+        print("Summary:", summary)
