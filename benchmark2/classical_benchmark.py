@@ -1,4 +1,4 @@
-# classical_transformer_benchmark.py
+# classical_benchmark.py
 import time
 import numpy as np
 import torch
@@ -62,10 +62,29 @@ class ClassicalTransformerBenchmark:
         def __init__(self, d_model, seq_len):
             super().__init__()
             self.mixing_weights = nn.Parameter(torch.randn(seq_len, seq_len))
+            self.d_model = d_model
+            self.seq_len = seq_len
 
         def forward(self, x):
             # Linear mixing along sequence dimension
-            return torch.einsum('bnm,bmd->bnd', self.mixing_weights.softmax(dim=-1), x)
+            # x shape: [batch_size, seq_len, d_model]
+            # mixing_weights shape: [seq_len, seq_len]
+            mixing_matrix = self.mixing_weights.softmax(dim=-1)
+
+            # Correct einsum: mix sequence dimensions, preserve batch and feature dimensions
+            return torch.einsum('mn,bnd->bmd', mixing_matrix, x)
+
+    class FourierMixingLayer(nn.Module):
+        """Fourier mixing layer similar to FNet architecture"""
+        def __init__(self, d_model):
+            super().__init__()
+            self.d_model = d_model
+
+        def forward(self, x):
+            # Apply FFT along sequence dimension and take real part
+            # This mimics FNet's approach mentioned in the Quixer paper
+            x_fft = torch.fft.fft(x, dim=1)
+            return x_fft.real
 
     def benchmark_components(self, batch_size=32, seq_len=32, d_model=64, repeats=100):
         """Benchmark different classical transformer components"""
@@ -75,56 +94,72 @@ class ClassicalTransformerBenchmark:
         configs = [
             ("SimpleAttention", {"d_model": d_model}),
             ("LinearMixing", {"d_model": d_model, "seq_len": seq_len}),
+            ("FourierMixing", {"d_model": d_model}),
             ("MiniTransformer", {"d_model": d_model, "num_heads": 8})
         ]
 
         for name, params in configs:
             print(f"\n--- Benchmarking {name} ---")
 
-            # Create model and test input
-            if name == "SimpleAttention":
-                model = self.SimpleAttentionHead(params["d_model"]).to(self.device)
-            elif name == "LinearMixing":
-                model = self.LinearMixingLayer(params["d_model"], params["seq_len"]).to(self.device)
-            else:  # MiniTransformer
-                model = self.MiniTransformerLayer(params["d_model"], params["num_heads"]).to(self.device)
+            try:
+                # Create model and test input
+                if name == "SimpleAttention":
+                    model = self.SimpleAttentionHead(params["d_model"]).to(self.device)
+                elif name == "LinearMixing":
+                    model = self.LinearMixingLayer(params["d_model"], params["seq_len"]).to(self.device)
+                elif name == "FourierMixing":
+                    model = self.FourierMixingLayer(params["d_model"]).to(self.device)
+                else:  # MiniTransformer
+                    model = self.MiniTransformerLayer(params["d_model"], params["num_heads"]).to(self.device)
 
-            x = torch.randn(batch_size, seq_len, params["d_model"]).to(self.device)
+                x = torch.randn(batch_size, seq_len, params["d_model"]).to(self.device)
 
-            # Warmup
-            for _ in range(10):
-                _ = model(x)
+                # Warmup
+                for _ in range(10):
+                    _ = model(x)
 
-            # Time forward pass
-            start_time = time.time()
-            for _ in range(repeats):
-                output = model(x)
-                if self.device.type == 'cuda':
-                    torch.cuda.synchronize()
-            forward_time = (time.time() - start_time) / repeats
+                # Time forward pass
+                start_time = time.time()
+                for _ in range(repeats):
+                    output = model(x)
+                    if self.device.type == 'cuda':
+                        torch.cuda.synchronize()
+                forward_time = (time.time() - start_time) / repeats
 
-            # Memory usage (approximate)
-            if self.device.type == 'cpu':
-                process = psutil.Process(os.getpid())
-                memory_usage = process.memory_info().rss / 1024 / 1024  # MB
-            else:
-                memory_usage = torch.cuda.max_memory_allocated() / 1024 / 1024  # MB
+                # Memory usage (approximate)
+                if self.device.type == 'cpu':
+                    process = psutil.Process(os.getpid())
+                    memory_usage = process.memory_info().rss / 1024 / 1024  # MB
+                else:
+                    memory_usage = torch.cuda.max_memory_allocated() / 1024 / 1024  # MB
+                    torch.cuda.reset_peak_memory_stats()
 
-            # Parameter count
-            param_count = sum(p.numel() for p in model.parameters())
+                # Parameter count
+                param_count = sum(p.numel() for p in model.parameters())
 
-            # Throughput calculation
-            throughput = batch_size * seq_len / forward_time if forward_time > 0 else float('inf')
+                # Throughput calculation
+                throughput = batch_size * seq_len / forward_time if forward_time > 0 else float('inf')
 
-            self.results[name] = {
-                "forward_time_ms": forward_time * 1000,
-                "memory_mb": memory_usage,
-                "parameters": param_count,
-                "throughput_tokens_s": throughput,
-                "output_shape": tuple(output.shape)
-            }
+                self.results[name] = {
+                    "forward_time_ms": forward_time * 1000,
+                    "memory_mb": memory_usage,
+                    "parameters": param_count,
+                    "throughput_tokens_s": throughput,
+                    "output_shape": tuple(output.shape)
+                }
 
-            self._print_component_summary(name, self.results[name])
+                self._print_component_summary(name, self.results[name])
+
+            except Exception as e:
+                print(f"Error benchmarking {name}: {e}")
+                self.results[name] = {
+                    "forward_time_ms": float('inf'),
+                    "memory_mb": 0,
+                    "parameters": 0,
+                    "throughput_tokens_s": 0,
+                    "output_shape": None,
+                    "error": str(e)
+                }
 
     def benchmark_scaling(self, max_dim=256, batch_size=8, seq_len=32):
         """Benchmark scaling with increasing model dimensions"""
@@ -139,34 +174,47 @@ class ClassicalTransformerBenchmark:
 
             print(f"\n--- Testing d_model={d_model} ---")
 
-            model = self.MiniTransformerLayer(d_model, num_heads=8).to(self.device)
-            x = torch.randn(batch_size, seq_len, d_model).to(self.device)
+            try:
+                model = self.MiniTransformerLayer(d_model, num_heads=8).to(self.device)
+                x = torch.randn(batch_size, seq_len, d_model).to(self.device)
 
-            # Warmup
-            for _ in range(5):
-                _ = model(x)
+                # Warmup
+                for _ in range(5):
+                    _ = model(x)
 
-            # Time execution
-            start_time = time.time()
-            for _ in range(50):
-                output = model(x)
-                if self.device.type == 'cuda':
-                    torch.cuda.synchronize()
-            execution_time = (time.time() - start_time) / 50
+                # Time execution
+                start_time = time.time()
+                for _ in range(50):
+                    output = model(x)
+                    if self.device.type == 'cuda':
+                        torch.cuda.synchronize()
+                execution_time = (time.time() - start_time) / 50
 
-            # Resource metrics
-            param_count = sum(p.numel() for p in model.parameters())
-            flops_estimate = self._estimate_flops(model, x)
+                # Resource metrics
+                param_count = sum(p.numel() for p in model.parameters())
+                flops_estimate = self._estimate_flops(model, x)
 
-            scaling_results[d_model] = {
-                "execution_time_ms": execution_time * 1000,
-                "parameters": param_count,
-                "flops_estimate": flops_estimate,
-                "throughput_tokens_s": (batch_size * seq_len) / execution_time
-            }
+                scaling_results[d_model] = {
+                    "execution_time_ms": execution_time * 1000,
+                    "parameters": param_count,
+                    "flops_estimate": flops_estimate,
+                    "throughput_tokens_s": (batch_size * seq_len) / execution_time,
+                    "success": True
+                }
 
-            print(f"  d_model: {d_model}, Time: {execution_time*1000:.2f}ms, "
-                  f"Params: {param_count:,}, FLOPS: {flops_estimate:.2e}")
+                print(f"  d_model: {d_model}, Time: {execution_time*1000:.2f}ms, "
+                      f"Params: {param_count:,}, FLOPS: {flops_estimate:.2e}")
+
+            except Exception as e:
+                print(f"  d_model: {d_model}, Failed: {e}")
+                scaling_results[d_model] = {
+                    "execution_time_ms": float('inf'),
+                    "parameters": 0,
+                    "flops_estimate": 0,
+                    "throughput_tokens_s": 0,
+                    "success": False,
+                    "error": str(e)
+                }
 
         self.results["scaling"] = scaling_results
         return scaling_results
@@ -197,10 +245,10 @@ class ClassicalTransformerBenchmark:
         print(f"  Output Shape: {results['output_shape']}")
 
     def benchmark_equivalent_quantum_scale(self):
-        """Benchmark at scales equivalent to quantum model (6 qubits = 64 real dimensions)"""
+        """Benchmark at scales equivalent to quantum model (6 qubits = 64 complex dimensions)"""
         print("\n=== Quantum-Equivalent Scale Benchmarks ===")
 
-        # 6 qubits → 2^6 = 64 complex dimensions ≈ 128 real dimensions
+        # 6 qubits → 2^6 = 64 complex dimensions ≈ 128 real parameters
         quantum_equivalent_dims = [64, 128]
         seq_lengths = [8, 16, 32]  # Context lengths
 
@@ -211,26 +259,38 @@ class ClassicalTransformerBenchmark:
                 key = f"d{d_model}_seq{seq_len}"
                 print(f"\n--- Testing {key} ---")
 
-                model = self.MiniTransformerLayer(d_model, num_heads=8).to(self.device)
-                x = torch.randn(1, seq_len, d_model).to(self.device)  # batch_size=1 for fair comparison
+                try:
+                    model = self.MiniTransformerLayer(d_model, num_heads=8).to(self.device)
+                    x = torch.randn(1, seq_len, d_model).to(self.device)  # batch_size=1 for fair comparison
 
-                # Time execution
-                start_time = time.time()
-                for _ in range(100):
-                    output = model(x)
-                    if self.device.type == 'cuda':
-                        torch.cuda.synchronize()
-                execution_time = (time.time() - start_time) / 100
+                    # Time execution
+                    start_time = time.time()
+                    for _ in range(100):
+                        output = model(x)
+                        if self.device.type == 'cuda':
+                            torch.cuda.synchronize()
+                    execution_time = (time.time() - start_time) / 100
 
-                equivalent_results[key] = {
-                    "execution_time_ms": execution_time * 1000,
-                    "parameters": sum(p.numel() for p in model.parameters()),
-                    "throughput_tokens_s": seq_len / execution_time
-                }
+                    equivalent_results[key] = {
+                        "execution_time_ms": execution_time * 1000,
+                        "parameters": sum(p.numel() for p in model.parameters()),
+                        "throughput_tokens_s": seq_len / execution_time,
+                        "success": True
+                    }
 
-                print(f"  Time: {execution_time*1000:.2f}ms, "
-                      f"Params: {equivalent_results[key]['parameters']:,}, "
-                      f"Throughput: {equivalent_results[key]['throughput_tokens_s']:.1f} tokens/s")
+                    print(f"  Time: {execution_time*1000:.2f}ms, "
+                          f"Params: {equivalent_results[key]['parameters']:,}, "
+                          f"Throughput: {equivalent_results[key]['throughput_tokens_s']:.1f} tokens/s")
+
+                except Exception as e:
+                    print(f"  Configuration {key} failed: {e}")
+                    equivalent_results[key] = {
+                        "execution_time_ms": float('inf'),
+                        "parameters": 0,
+                        "throughput_tokens_s": 0,
+                        "success": False,
+                        "error": str(e)
+                    }
 
         self.results["quantum_equivalent"] = equivalent_results
         return equivalent_results
@@ -249,7 +309,7 @@ class ClassicalTransformerBenchmark:
             print("-" * 80)
 
             for name, results in self.results.items():
-                if name not in ["scaling", "quantum_equivalent"]:
+                if name not in ["scaling", "quantum_equivalent"] and "error" not in results:
                     print(f"{name:<20} {results['forward_time_ms']:<10.2f} "
                           f"{results['memory_mb']:<12.1f} {results['parameters']:<12,} "
                           f"{results['throughput_tokens_s']:<15.0f}")
@@ -260,8 +320,9 @@ class ClassicalTransformerBenchmark:
             print("d_model | Time (ms) | Parameters | Throughput (tokens/s)")
             print("-" * 60)
             for d_model, result in sorted(self.results["scaling"].items()):
-                print(f"{d_model:7} | {result['execution_time_ms']:9.2f} | "
-                      f"{result['parameters']:10,} | {result['throughput_tokens_s']:17.0f}")
+                if result.get("success", False):
+                    print(f"{d_model:7} | {result['execution_time_ms']:9.2f} | "
+                          f"{result['parameters']:10,} | {result['throughput_tokens_s']:17.0f}")
 
         # Quantum equivalent comparison
         if "quantum_equivalent" in self.results:
@@ -269,8 +330,9 @@ class ClassicalTransformerBenchmark:
             print("Configuration | Time (ms) | Parameters | Throughput (tokens/s)")
             print("-" * 65)
             for config, result in self.results["quantum_equivalent"].items():
-                print(f"{config:12} | {result['execution_time_ms']:9.2f} | "
-                      f"{result['parameters']:10,} | {result['throughput_tokens_s']:17.1f}")
+                if result.get("success", False):
+                    print(f"{config:12} | {result['execution_time_ms']:9.2f} | "
+                          f"{result['parameters']:10,} | {result['throughput_tokens_s']:17.1f}")
 
 if __name__ == "__main__":
     # Detect available device
