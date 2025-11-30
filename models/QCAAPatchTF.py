@@ -8,6 +8,7 @@ from layers.SelfAttention_Family import FullAttention, AttentionLayer, QuantumAt
 from layers.QuixerAttention_old import QuixerAttentionLayer
 from layers.Quixer import QuixerCore, QuixerAttentionLayer_OptionA
 from layers.Quixer_no_unitaries import QuixerAttentionLayer_OptionB
+from layers.Quixer_torchQuantum import QuixerAttentionLayer_OptionC
 from layers.Embed import PatchEmbedding
 import numpy as np
 
@@ -105,14 +106,13 @@ class Model(nn.Module):
                     #     attention_dropout=configs.dropout,
                     #     output_attention=configs.output_attention,
                     # ) if use_quantum_for_layer(i)
-                    QuixerAttentionLayer_OptionB(
+                    QuixerAttentionLayer_OptionC(
                         d_model=configs.d_model,
                         n_qubits=self.n_qubits,
                         n_tokens=96,                                  
                         qsvt_degree=self.qsvt_degree,
                         n_ansatz_layers=self.n_ansatz_layers,
-                        dev_name="lightning.qubit",                
-                        output_attention=configs.output_attention,
+                        device="cuda",                
                     ) if use_quantum_for_layer(i)
                     else AttentionLayer(
                         FullAttention(

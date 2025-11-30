@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Set CUDA device for GPU acceleration
+export CUDA_VISIBLE_DEVICES=0
+
 # Quixer Quantum Attention Configuration Options:
 # --quantum_attention_mode:
 #   "full"        - All encoder layers use Quixer quantum attention
@@ -32,13 +35,13 @@ python -u run.py \
   --des 'Exp' \
   --itr 1 \
   --train_epochs 3 \
-  --batch_size 16 \
-  --num_workers 4 \
+  --batch_size 32 \
+  --num_workers 8 \
   --use_quantum_attention 1 \
   --quantum_attention_mode full \
-  --n_qubits 3 \
-  --qsvt_polynomial_degree 1 \
-  --n_ansatz_layers 1
+  --n_qubits 6 \
+  --qsvt_polynomial_degree 2 \
+  --n_ansatz_layers 2
 
 # python -u run.py \
 #   --task_name long_term_forecast \
