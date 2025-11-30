@@ -1,4 +1,4 @@
-# benchmarking_helper.py
+# benchmark.py
 # drop into same folder as your quixer script and import your build_* functions
 
 import csv
@@ -7,6 +7,32 @@ import time
 
 import numpy as np
 from braket.devices import LocalSimulator
+from braket.aws import AwsDevice
+
+# ---------- Device selection config ----------
+# Change this ONE variable to switch where circuits run.
+#   "local"
+#   "ionq_aria"
+#   "ionq_forte"
+#   "aqt_ibex"
+DEVICE_MODE = "local" 
+
+def get_device():
+    """
+    Return a Braket device object based on DEVICE_MODE.
+
+    You can extend this with more modes / ARNs as needed.
+    """
+    if DEVICE_MODE == "local":
+        return LocalSimulator()
+    elif DEVICE_MODE == "sv1":
+        return AwsDevice("arn:aws:braket:::device/quantum-simulator/amazon/sv1")
+    elif DEVICE_MODE == "tn1":
+        return AwsDevice("arn:aws:braket:::device/quantum-simulator/amazon/tn1")
+    elif DEVICE_MODE == "ionq_aria":
+        return AwsDevice("arn:aws:braket:us-east-1::device/qpu/ionq/Aria-1")
+    else:
+        raise ValueError(f"Unknown DEVICE_MODE: {DEVICE_MODE}")
 
 
 # ---------- Helper: parse common Braket counts formats ----------
@@ -103,7 +129,10 @@ def benchmark_circuit_builder(
     repeats: how many independent runs (for timing + SEM aggregation)
     postselect_bit: index in bitstring to postselect on, or None (no postselection)
     """
-    sim = LocalSimulator()
+
+    # Use the global device switch
+    device = get_device()
+
     rows = []
     # run repeats to measure timing jitter & SEM
     for r in range(repeats):
@@ -115,7 +144,7 @@ def benchmark_circuit_builder(
 
         # run & time
         t0 = time.time()
-        task = sim.run(circ, shots=shots)
+        task = device.run(circ, shots=shots)
         result = task.result()
         t1 = time.time()
         wall_time = t1 - t0
@@ -153,7 +182,6 @@ def benchmark_circuit_builder(
             p_succ = 1.0
 
         # compute Z stats on data qubits (assume data qubits at left-most indexes)
-        # user can post-process differently if their bit-ordering differs
         z0_mean, z0_std, z0_N = z_stats_from_flat_counts(kept, 0)
         z1_mean, z1_std, z1_N = z_stats_from_flat_counts(kept, 1)
 

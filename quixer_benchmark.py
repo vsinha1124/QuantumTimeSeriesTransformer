@@ -1,20 +1,34 @@
-# quixer_mini_v4.py
+# quixer_benchmark.py  (a.k.a. quixer_mini_v4 core circuits)
 # ======================================================
-# Quixer-Mini variants on AWS Braket LocalSimulator:
+# Quixer-Mini variants:
 #   1) LCU-only block:      A = b0 U0 + b1 U1   (linear)
 #   2) QSVT(U)-inspired:    nonlinear block on a single unitary U
 #   3) QSVT(A)-inspired:    nonlinear block on full LCU gadget A
 #
-# Uses correct CRY decomposition and proper A / A† adjoints.
-# Runs entirely on LocalSimulator (no AWS creds needed).
+# This file ONLY defines circuits. It does NOT pick a device or run them.
+# All execution happens in benchmark.py via DEVICE_MODE + get_device().
 
 from braket.circuits import Circuit
-from braket.devices import LocalSimulator
-import numpy as np
+
+# ---------------------------------------------------------
+# 0. Utility: backwards-compatible measure helper
+# ---------------------------------------------------------
+def safe_measure(circ: Circuit, qubit: int, key: str):
+    """
+    Backwards-compatible measurement helper.
+
+    - On modern Braket: uses circ.measure(qubit, key)
+    - On older / different Circuit implementations: falls back to circ.measure(qubit)
+    """
+    try:
+        circ.measure(qubit, key)
+    except TypeError:
+        circ.measure(qubit)
+    return circ
 
 
 # ---------------------------------------------------------
-# 0. Utility: controlled-RY via standard CRY decomposition
+# 0.5 Utility: controlled-RY via standard CRY decomposition
 # ---------------------------------------------------------
 def cry(circ: Circuit, control: int, target: int, theta: float):
     """
@@ -197,9 +211,9 @@ def build_quixer_mini_lcu(
     )
 
     if measure_all:
-        circ.measure(q0)
-        circ.measure(q1)
-        circ.measure(qc)
+        safe_measure(circ, q0, "d0")
+        safe_measure(circ, q1, "d1")
+        safe_measure(circ, qc, "lcu")
 
     return circ
 
@@ -253,9 +267,9 @@ def build_quixer_mini_with_qsvt_U(
     circ.rz(qa, phi2)
 
     if measure_all:
-        circ.measure(q0)
-        circ.measure(q1)
-        circ.measure(qa)
+        safe_measure(circ, q0, "d0")
+        safe_measure(circ, q1, "d1")
+        safe_measure(circ, qa, "anc")
 
     return circ
 
@@ -342,148 +356,9 @@ def build_quixer_mini_with_qsvt_full_lcu(
     circ.rz(qa, phi2)
 
     if measure_all:
-        circ.measure(q0)
-        circ.measure(q1)
-        circ.measure(qc)
-        circ.measure(qa)
+        safe_measure(circ, q0, "d0")
+        safe_measure(circ, q1, "d1")
+        safe_measure(circ, qc, "lcu")
+        safe_measure(circ, qa, "anc")
 
     return circ
-
-
-# --------------------------------------------
-# 6. Helpers: run locally & handle counts
-# --------------------------------------------
-def run_local(circuit, shots=4000):
-    sim = LocalSimulator()
-    task = sim.run(circuit, shots=shots)
-    result = task.result()
-    return result.measurement_counts
-
-
-def flatten_counts(measurement_counts):
-    """
-    Normalize measurement_counts into {bitstring(str) -> count(int)}.
-
-    Handles:
-      - flat dict: {'000': 10, '011': 5}
-      - nested dict: {('d0','d1'): {('0','1'): 7, ...}}
-    """
-    # Already flat (str -> int)?
-    some_key = next(iter(measurement_counts))
-    some_val = measurement_counts[some_key]
-
-    if isinstance(some_key, str) and isinstance(some_val, int):
-        return measurement_counts
-
-    # Nested dict keyed by classical register names
-    flat = {}
-    for _, inner in measurement_counts.items():
-        if isinstance(inner, dict):
-            for bits, c in inner.items():
-                # bits might be a tuple of '0'/'1'
-                if isinstance(bits, tuple):
-                    bitstring = "".join(bits)
-                else:
-                    bitstring = str(bits)
-                flat[bitstring] = flat.get(bitstring, 0) + c
-        else:
-            # Fallback: treat outer key as bits
-            key = some_key
-            if isinstance(key, tuple):
-                bitstring = "".join(key)
-            else:
-                bitstring = str(key)
-            flat[bitstring] = flat.get(bitstring, 0) + some_val
-    return flat
-
-
-def z_expectation_from_counts(flat_counts, bit_index):
-    """
-    <Z> = P(0) - P(1) on given bit position in the bitstring.
-    Assumes bitstring[bit_index] is '0'/'1'.
-    """
-    total = 0
-    z = 0
-    for bitstring, c in flat_counts.items():
-        bit = bitstring[bit_index]
-        total += c
-        z += c if bit == "0" else -c
-    return z / total if total > 0 else 0.0
-
-
-# -----------------------------
-# 7. Example usage / comparison
-# -----------------------------
-if __name__ == "__main__":
-    # Example token parameters
-    token0_angles = {"a0": 0.3,  "a1": -0.2, "b0": 0.5,  "b1": -0.1}
-    token1_angles = {"a0": -0.4, "a1": 0.6,  "b0": -0.7, "b1": 0.2}
-    gamma = 0.7
-    encode_angles = {"x0": 0.2, "x1": -0.1}
-
-    # For QSVT-on-U, use a single PQC U
-    tokenU_angles = {"a0": 0.3, "a1": 0.5, "b0": -0.2, "b1": 0.4}
-    qsvt_phis = (0.3, 0.9, -0.4)
-
-    # 1) LCU-only
-    print("=== LCU-only Quixer-Mini ===")
-    circ_lcu = build_quixer_mini_lcu(
-        token0_angles,
-        token1_angles,
-        gamma,
-        encode_angles=encode_angles,
-    )
-    print(circ_lcu)
-    raw_lcu = run_local(circ_lcu, shots=4000)
-    flat_lcu = flatten_counts(raw_lcu)
-    print("LCU flat counts:", flat_lcu)
-
-    # Postselect on lcu-control = 0 (bit 2 = '0')
-    total_shots = sum(flat_lcu.values())
-    post_lcu = {b: c for b, c in flat_lcu.items() if b[-1] == "0"}
-    succ_shots = sum(post_lcu.values())
-    p_success = succ_shots / total_shots if total_shots > 0 else 0.0
-    print(f"LCU postselection success probability: {p_success:.3f}")
-
-    z0_lcu = z_expectation_from_counts(post_lcu, 0)
-    z1_lcu = z_expectation_from_counts(post_lcu, 1)
-    print("<Z0>_LCU =", z0_lcu)
-    print("<Z1>_LCU =", z1_lcu)
-    print()
-
-    # 2) QSVT-on-U (inspired)
-    print("=== QSVT-on-U (inspired) ===")
-    circ_qU = build_quixer_mini_with_qsvt_U(
-        tokenU_angles,
-        encode_angles=encode_angles,
-        qsvt_phis=qsvt_phis,
-    )
-    print(circ_qU)
-    raw_qU = run_local(circ_qU, shots=4000)
-    flat_qU = flatten_counts(raw_qU)
-    print("QSVT(U) flat counts:", flat_qU)
-    z0_qU = z_expectation_from_counts(flat_qU, 0)
-    z1_qU = z_expectation_from_counts(flat_qU, 1)
-    print("<Z0>_QSVT(U) =", z0_qU)
-    print("<Z1>_QSVT(U) =", z1_qU)
-    print()
-
-    # 3) QSVT-on-A (LCU, inspired)
-    print("=== QSVT-on-A(LCU) (inspired) ===")
-    circ_qA = build_quixer_mini_with_qsvt_full_lcu(
-        token0_angles,
-        token1_angles,
-        gamma,
-        encode_angles=encode_angles,
-        qsvt_phis=qsvt_phis,
-    )
-    print(circ_qA)
-    raw_qA = run_local(circ_qA, shots=4000)
-    flat_qA = flatten_counts(raw_qA)
-    print("QSVT(A) flat counts:", flat_qA)
-
-    # Bit layout here: [d0, d1, lcu, anc] -> indices 0,1,2,3
-    z0_qA = z_expectation_from_counts(flat_qA, 0)
-    z1_qA = z_expectation_from_counts(flat_qA, 1)
-    print("<Z0>_QSVT(A) =", z0_qA)
-    print("<Z1>_QSVT(A) =", z1_qA)
