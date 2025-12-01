@@ -1,0 +1,7 @@
+architecture,description,execution_time_s,throughput_samples_s,qubits,single_qubit_gates,two_qubit_gates,total_gates,success_probability,environment,device_used,timestamp
+Quantum_LCU_Linear,Linear combination of token unitaries (basic mixing),3.2986279328664145,382.44546167359795,3,25,18,43,1.0,braket_quantum,ankaa3,2025-12-01 00:09:55
+Quantum_QSVT_Single,Nonlinear transform on single unitary (feature transformation),2.8634612560272217,382.2677806330362,3,28,19,47,1.0,braket_quantum,ankaa3,2025-12-01 00:09:55
+Quantum_QSVT_Full,Full nonlinear transform on mixed unitaries (complete attention),2.864408334096273,385.6644249266812,4,69,54,123,1.0,braket_quantum,ankaa3,2025-12-01 00:09:55
+Quantum_LCU_Linear,Linear combination of token unitaries (basic mixing),2.864926894505819,170.6778271309545,3,25,18,43,0.42366666666666664,braket_quantum,ankaa3,2025-12-01 00:32:52
+Quantum_QSVT_Single,Nonlinear transform on single unitary (feature transformation),2.390636603037516,433.73672395203556,3,28,19,47,1.0,braket_quantum,ankaa3,2025-12-01 00:32:52
+Quantum_QSVT_Full,Full nonlinear transform on mixed unitaries (complete attention),2.706666866938273,246.48574738008242,4,69,54,123,0.6526666666666666,braket_quantum,ankaa3,2025-12-01 00:32:52
