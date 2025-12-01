@@ -57,7 +57,7 @@ def get_device(DEVICE_MODE):
         return AwsDevice("arn:aws:braket:eu-north-1::device/qpu/aqt/aqt-qpu", aws_session=session)
 
     if mode == "anka3" or mode == "ankaa3" or mode == "rigetti_ankaa3":
-        return AwsDevice("arn:aws:braket:us-west-2::device/qpu/rigetti/Ankaa-3", aws_session=session)
+        return AwsDevice("arn:aws:braket:us-west-1::device/qpu/rigetti/Ankaa-3", aws_session=session)
 
     if mode == "aquila" or mode == "quera_aquila":
         return AwsDevice("arn:aws:braket:us-east-1::device/qpu/quera/Aquila", aws_session=session)
@@ -505,7 +505,7 @@ if __name__ == "__main__":
         compare_quixer_variants(shots=2000, repeats=3)
 
     else:
-        from quixer_benchmark import (
+        from quixer_architecture import (
             build_quixer_mini_lcu,
             build_quixer_mini_with_qsvt_full_lcu,
             build_quixer_mini_with_qsvt_U,

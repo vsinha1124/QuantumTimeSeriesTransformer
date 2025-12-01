@@ -79,13 +79,19 @@ class QuantumArchitectureBenchmark:
             print(f"\n--- Benchmarking {name} ---")
             print(f"Description: {arch['description']}")
 
+            # Decide which bit (if any) to postselect on
+            if name in ("Quantum_LCU_Linear", "Quantum_QSVT_Full"):
+                post_bit = 2   # qc is qubit 2
+            else:
+                post_bit = None
+            
             summary, detailed_results = benchmark_circuit_builder(
                 arch["builder"],
                 arch["params"],
                 shots=shots,
                 repeats=repeats,
-                postselect_bit=None,
-                csv_out=f"quantum_{name.lower()}_results.csv"
+                postselect_bit=post_bit,
+                csv_out=f"{self.device_mode}_{name.lower()}_results.csv"
             )
 
             # Extract resource counts from first run
@@ -216,8 +222,8 @@ def run_benchmarks_on_different_devices():
 
 if __name__ == "__main__":
     # Option 1: Run on specific device
-    device = "sv1"  # Change to "sv1", "ionq_aria", etc.
+    device = "local"  # Change to "sv1", "ionq_aria", etc.
     quantum_benchmark = QuantumArchitectureBenchmark(device_mode=device)
     quantum_results = quantum_benchmark.benchmark_quantum_architectures(shots=1000, repeats=3)
     quantum_benchmark.generate_quantum_report()
-    quantum_benchmark.export_quantum_results_to_csv("quantum_results_{device}.csv")
+    quantum_benchmark.export_quantum_results_to_csv(f"quantum_results_{device}.csv")
