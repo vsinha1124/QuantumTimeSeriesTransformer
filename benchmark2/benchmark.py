@@ -23,15 +23,16 @@ from braket.aws import AwsDevice, AwsSession
 #   "ionq_aria"     - IonQ Aria-1 trapped-ion QPU (us-east-1)
 #   "ionq_forte"    - IonQ Forte trapped-ion QPU (us-east-1)
 #   "aqt_ibex"      - AQT Ibex-Q1 trapped-ion QPU (eu-north-1)
-DEVICE_MODE = "local"
+GLOBAL_DEVICE_MODE = "local"
 
-
-def get_device():
+def get_device(DEVICE_MODE):
     """
     Return the correct device based on DEVICE_MODE.
     Compatible with the new Braket SDK (no region= argument).
     """
     mode = DEVICE_MODE.lower()
+    global GLOBAL_DEVICE_MODE
+    GLOBAL_DEVICE_MODE = DEVICE_MODE
 
     # Local simulator (no session needed)
     if mode == "local":
@@ -235,7 +236,7 @@ def benchmark_circuit_builder(
     postselect_bit: index in bitstring to postselect on, or None (no postselection)
     """
 
-    device = get_device()
+    device = get_device(GLOBAL_DEVICE_MODE)
     # For LocalSimulator, status may not exist; guard in try/except
     try:
         assert_device_ready(device)

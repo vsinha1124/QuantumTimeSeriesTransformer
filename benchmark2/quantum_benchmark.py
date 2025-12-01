@@ -3,8 +3,6 @@ import time
 import numpy as np
 from braket.circuits import Circuit
 from benchmark import benchmark_circuit_builder, get_device
-# Import the global DEVICE_MODE to modify it
-from benchmark import DEVICE_MODE as global_device_mode
 from quixer_architecture import (
     build_quixer_mini_lcu,
     build_quixer_mini_with_qsvt_U,
@@ -18,8 +16,6 @@ class QuantumArchitectureBenchmark:
         self.device_mode = device_mode
         self.architectures = {}
         # Set the global device mode when instance is created
-        global global_device_mode
-        global_device_mode = device_mode
         print(f"Quantum benchmark configured for device: {device_mode}")
 
     def benchmark_quantum_architectures(self, shots=1000, repeats=3):
@@ -29,7 +25,7 @@ class QuantumArchitectureBenchmark:
 
         # Test device connectivity
         try:
-            device = get_device()
+            device = get_device(self.device_mode)
             print(f"Connected to: {getattr(device, 'name', str(device))}")
 
             # For real quantum devices, check status
@@ -38,8 +34,7 @@ class QuantumArchitectureBenchmark:
         except Exception as e:
             print(f"Warning: Could not connect to device: {e}")
             print("Falling back to local simulator")
-            global global_device_mode
-            global_device_mode = "local"
+            self.device_mode = "local"
 
         # Define the three quantum architectures with their parameters
         architectures = {
@@ -221,8 +216,8 @@ def run_benchmarks_on_different_devices():
 
 if __name__ == "__main__":
     # Option 1: Run on specific device
-    device = "local"  # Change to "sv1", "ionq_aria", etc.
+    device = "sv1"  # Change to "sv1", "ionq_aria", etc.
     quantum_benchmark = QuantumArchitectureBenchmark(device_mode=device)
     quantum_results = quantum_benchmark.benchmark_quantum_architectures(shots=1000, repeats=3)
     quantum_benchmark.generate_quantum_report()
-    quantum_benchmark.export_quantum_results_to_csv("quantum_results.csv")
+    quantum_benchmark.export_quantum_results_to_csv("quantum_results_{device}.csv")
