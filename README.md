@@ -17,16 +17,16 @@ The Quixer branch implements quantum attention mechanisms using the Quantum Line
 ---
 
 ### 🔶 [Benchmark Branch](../../tree/benchmark)
-**Classical Baselines and Performance Comparisons for Quixer QLA Architecture**
+**Quantum Hardware Benchmarking with Quixer QLA Architecture**
 
 The benchmark branch provides classical baseline implementations and tools for comparing Quixer QLA quantum approaches against traditional methods on Quantum hardware and T4 GPU.
 
 ---
 
 ### 🔷 [PQC Branch](../../tree/PQC)
-**Parameterized Quantum Circuits Approaches Using Quantum Mapping/Projection and Quantum Pairwise Attention**
+**Parameterized Quantum Circuits Attention Approaches Using Quantum Mapping/Projection and Quantum Pairwise Attention**
 
-The PQC branch implements multiple hybrid quantum–classical attention mechanisms built using parameterized quantum circuits. These include quantum projection–based attention and quantum kernel attention (using fidelity and Hadamard-test estimators).
+The PQC branch implements multiple quantum–classical attention mechanisms built using parameterized quantum circuits. These include quantum projection–based attention mechanisms and quantum kernel attention mechanisms (using fidelity and Hadamard-test estimators).
 
 
 ##  Getting Started
@@ -46,7 +46,7 @@ Navigate to the branch corresponding to the approach you want to explore:
 # For Quixer quantum attention approach
 git checkout Quixer
 
-# For classical benchmarks
+# For Quixer quantum-harware benchmarks
 git checkout benchmark
 
 # For PQC-based attention approaches
@@ -55,7 +55,7 @@ git checkout PQC
 
 ## Citations
 
-This work builds upon and extends the following researches:
+This repository builds upon the following works:
 
 ### Quantum PatchTST for Time-Series Forecasting
 ```bibtex
