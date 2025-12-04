@@ -25,7 +25,6 @@ All the results below are stored in csvs in `/process_csv/QQQ_hardware_runs`.
 #### IQM Garnet
 ```
 /process_csv/QQQ_hardware_runs/quantum_results_iqm_garnet.csv
-
 ```
 
 #### IonQ Forte
