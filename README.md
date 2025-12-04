@@ -49,7 +49,7 @@ git checkout Quixer
 # For classical benchmarks
 git checkout benchmark
 
-# For PQC approach 
+# For PQC-based attention approaches
 git checkout PQC
 ```
 
@@ -68,6 +68,18 @@ This work builds upon and extends the following researches:
 }
 ```
 **Repository**: [https://github.com/sanjaylopa22/QCAAPatchTF](https://github.com/sanjaylopa22/QCAAPatchTF)
+
+### Smaldone et al.
+```bibtex
+@article{smaldone2025,
+  title={A Hybrid Transformer Architecture with a Quantized Self-Attention Mechanism Applied to Molecular Generation},
+  author={Anthony M. Smaldone and Yu Shee and Gregory W. Kyro and Marwa H. Farag and Zohim Chandani and Elica Kyoseva and Victor S. Batista},
+  journal={arXiv preprint arXiv:2502.19214},
+  year={2025},
+  url={https://arxiv.org/abs/2502.19214}
+}
+```
+**Repository**: [https://github.com/anthonysmaldone/Quantum-Transformer](https://github.com/anthonysmaldone/Quantum-Transformer)
 
 ### Quixer
 ```bibtex
