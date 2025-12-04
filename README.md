@@ -57,7 +57,7 @@ git checkout PQC
 
 This work builds upon and extends the following researches:
 
-### Quantum PatchTST
+### Quantum PatchTST for Time-Series Forecasting
 ```bibtex
 @article{quantumpatchTST2025,
   title={Quantum Context-Aware Attention for Time Series Forecasting},
@@ -69,7 +69,7 @@ This work builds upon and extends the following researches:
 ```
 **Repository**: [https://github.com/sanjaylopa22/QCAAPatchTF](https://github.com/sanjaylopa22/QCAAPatchTF)
 
-### Smaldone et al.
+### Hybrid Quantum Transformer Archiecture for Molecular Generation
 ```bibtex
 @article{smaldone2025,
   title={A Hybrid Transformer Architecture with a Quantized Self-Attention Mechanism Applied to Molecular Generation},
@@ -81,7 +81,7 @@ This work builds upon and extends the following researches:
 ```
 **Repository**: [https://github.com/anthonysmaldone/Quantum-Transformer](https://github.com/anthonysmaldone/Quantum-Transformer)
 
-### Quixer
+### Quixer Quantum Transformer Archiecture
 ```bibtex
 @article{Quixer2024,
   title={Quixer: A Quantum Transformer with Improved Expressivity},
