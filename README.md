@@ -17,18 +17,18 @@ All the results are stored in csvs in `/process_csv`.
 /QQQ_hardware_runs/quantum_results_ankaa3.csv
 ```
 
-### IQM Emerald
+#### IQM Emerald
 ```
 /QQQ_hardware_runs/quantum_results_iqm_emerald.csv
 ```
 
-### IQM Garnet
+#### IQM Garnet
 ```
 /QQQ_hardware_runs/quantum_results_iqm_garnet.csv
 
 ```
 
-### IonQ Forte
+#### IonQ Forte
 ```
 /QQQ_hardware_runs/quantum_results_ionq_forte_150_shots.csv
 ```
