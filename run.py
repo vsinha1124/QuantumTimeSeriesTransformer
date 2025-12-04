@@ -84,6 +84,12 @@ if __name__ == '__main__':
                         help='down sampling method, only support avg, max, conv')
     parser.add_argument('--seg_len', type=int, default=48,
                         help='the length of segmen-wise iteration of SegRNN')
+    parser.add_argument('--n_qubits', type=int, default=4,
+                        help='Number of qubits for quantum attention modules')
+    parser.add_argument('--quantum_attention', type=bool, default=True, 
+                        help='Use Quantum Attention or Classical Attention')
+    parser.add_argument('--pqc_type', type=str, default='quantum_projection', 
+                        help='pqc type: "quantum_projection", "quantum_projection_hybrid", "quantum_kernel_fidelity", "quantum_kernel_hadamard"')
 
     # optimization
     parser.add_argument('--num_workers', type=int, default=10, help='data loader num workers')

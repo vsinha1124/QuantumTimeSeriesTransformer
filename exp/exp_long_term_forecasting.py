@@ -283,4 +283,23 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         np.save(folder_path + 'pred.npy', preds)
         np.save(folder_path + 'true.npy', trues)
 
+        # Save CSV versions
+        import csv
+        metrics_csv_path = os.path.join(folder_path, 'metrics.csv')
+        with open(metrics_csv_path, 'w', newline='') as f_csv:
+            writer = csv.writer(f_csv)
+            writer.writerow(['mae', 'mse', 'rmse', 'mape', 'mspe'])
+            writer.writerow([mae, mse, rmse, mape, mspe])
+
+        preds_csv_path = os.path.join(folder_path, 'pred.csv')
+        with open(preds_csv_path, 'w', newline='') as f_csv:
+            writer = csv.writer(f_csv)
+            for i in range(preds.shape[0]):
+                writer.writerow(preds[i].reshape(-1))
+
+        trues_csv_path = os.path.join(folder_path, 'true.csv')
+        with open(trues_csv_path, 'w', newline='') as f_csv:
+            writer = csv.writer(f_csv)
+            for i in range(trues.shape[0]):
+                writer.writerow(trues[i].reshape(-1))
         return

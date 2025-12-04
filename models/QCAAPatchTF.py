@@ -4,7 +4,7 @@
 import torch
 from torch import nn
 from layers.Transformer_EncDec import Encoder, EncoderLayer
-from layers.SelfAttention_Family import FullAttention, AttentionLayer, QuantumAttention
+from layers.SelfAttention_Family import FullAttention, AttentionLayer, QuantumVariationalLayer, QuantumProjectionAttention, QuantumProjectionAttentionHybrid, QuantumKernelAttentionFidelity, QuantumKernelAttentionHadamard
 from layers.Embed import PatchEmbedding
 import numpy as np
 
@@ -64,38 +64,35 @@ class Model(nn.Module):
         self.patch_embedding = PatchEmbedding(
             configs.d_model, self.patch_len, stride, padding, configs.dropout)
 
-
         # Encoder
-        self.use_quantum_attention = False #getattr(configs, "use_quantum_attention", False)  # Check if QuantumAttention is enabled
-        if self.use_quantum_attention:
-            print("QQQ")
-        
+        self.use_quantum_attention = getattr(configs, "quantum_attention", True)
+        self.pqc_type = getattr(configs, "pqc_type", "quantum_mapping")
+        self.n_qubits = getattr(configs, "n_qubits", 4)
+
+        print("Quantum attention:", self.use_quantum_attention)
+        print("PQC type:", self.pqc_type)
+        print("Number of Qubits:", self.n_qubits)
+
+        # Get correct attention module factory
+        attention_factory = self._select_attention_module(configs)
         self.encoder = Encoder(
             [
                 EncoderLayer(
                     AttentionLayer(
-                        QuantumAttention(
-                            scale=1.0 / np.sqrt(configs.d_model),
-                            attention_dropout=configs.dropout,
-                            output_attention=configs.output_attention,
-                            #num_heads=configs.n_heads,
-                        ) if i % 2 == 0 and self.use_quantum_attention  # Use QuantumAttention in even layers
-                        else FullAttention(
-                            mask_flag=False,
-                            factor=configs.factor,
-                            attention_dropout=configs.dropout,
-                            output_attention=configs.output_attention,
-                        ),  # Use FullAttention in odd layers
+                        attention_factory(),
                         configs.d_model,
                         configs.n_heads,
                     ),
                     configs.d_model,
                     configs.d_ff,
                     dropout=configs.dropout,
-                    activation=configs.activation
-                ) for i in range(configs.e_layers)
+                    activation=configs.activation,
+                )
+                for _ in range(configs.e_layers)
             ],
-            norm_layer=nn.Sequential(Transpose(1,2), nn.BatchNorm1d(configs.d_model), Transpose(1,2))
+            norm_layer=nn.Sequential(
+                Transpose(1, 2), nn.BatchNorm1d(configs.d_model), Transpose(1, 2)
+            ),
         )
 
         # Prediction Head
@@ -112,6 +109,52 @@ class Model(nn.Module):
             self.dropout = nn.Dropout(configs.dropout)
             self.projection = nn.Linear(
                 self.head_nf * configs.enc_in, configs.num_class)
+
+    def _select_attention_module(self, configs):
+        """
+        Returns a factory that creates the correct attention module
+        """
+        if not self.use_quantum_attention:
+            return lambda: FullAttention(
+                mask_flag=False,
+                factor=configs.factor,
+                attention_dropout=configs.dropout,
+                output_attention=configs.output_attention,
+            )
+
+        pqc = self.pqc_type.lower()
+
+        if pqc == "quantum_projection":
+            return lambda: QuantumProjectionAttention(
+                d_model=configs.d_model,
+                n_heads=configs.n_heads,
+                n_qubits=self.n_qubits,
+            )
+
+        elif pqc == "quantum_projection_hybrid":
+            return lambda: QuantumProjectionAttentionHybrid(
+                d_model=configs.d_model,
+                n_heads=configs.n_heads,
+                n_qubits=self.n_qubits,
+            )
+
+        elif pqc == "quantum_kernel_fidelity":
+            return lambda: QuantumKernelAttentionFidelity(
+                d_model=configs.d_model,
+                n_heads=configs.n_heads,
+                n_qubits=self.n_qubits,
+            )
+
+        elif pqc == "quantum_kernel_hadamard":
+            return lambda: QuantumKernelAttentionHadamard(
+                d_model=configs.d_model,
+                n_heads=configs.n_heads,
+                n_qubits=self.n_qubits,
+            )
+
+        else:
+            raise ValueError(f"Unknown pqc_type: {self.pqc_type}")
+
 
     def forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec):
         # Normalization from Non-stationary Transformer

@@ -9,11 +9,11 @@ import torch.nn.functional as F
 from math import sqrt
 import pennylane as qml
 import numpy as np
+import math
 
 
 class DSAttention(nn.Module):
     '''De-stationary Attention'''
-
     def __init__(self, mask_flag=True, factor=5, scale=None, attention_dropout=0.1, output_attention=False):
         super(DSAttention, self).__init__()
         self.scale = scale
@@ -376,7 +376,7 @@ class QuantumAttentionOld(nn.Module):
         """
         QuantumAttention module with Variational Quantum Eigensolver (VQE) for attention score computation.
         """
-        super(QuantumAttention, self).__init__()
+        super(QuantumAttentionOld, self).__init__()
         self.num_qubits = num_qubits
         self.mask_flag = mask_flag
         self.scale = scale
@@ -454,108 +454,358 @@ class QuantumAttentionOld(nn.Module):
         V = torch.einsum("bhls,bshd->blhd", A, values)
 
         return (V.contiguous(), A) if self.output_attention else (V.contiguous(), None)
-    
-import torch
-import torch.nn as nn
-import numpy as np
-from math import sqrt
-import pennylane as qml
-import torch.nn.functional as F
 
-class QuantumAttention(nn.Module):
-    def __init__(self, num_qubits=4, mask_flag=True, scale=None, attention_dropout=0.1,
-                 output_attention=False, entanglement_factor=0.5):
-        super(QuantumAttention, self).__init__()
-        self.num_qubits = num_qubits
-        self.mask_flag = mask_flag
-        self.scale = scale
-        self.output_attention = output_attention
-        self.dropout = nn.Dropout(attention_dropout)
-        self.entanglement_factor = entanglement_factor
-
-        # Initialize quantum device
-        self.dev = qml.device("default.qubit", wires=self.num_qubits)
+class QuantumVariationalLayer(nn.Module):
+    def __init__(self, n_qubits, n_layers):
+        super().__init__()
+        self.n_qubits = n_qubits
+        self.n_layers = n_layers
         
-        # 2 layers of parameters in the circuit
-        num_layers = 2 
-        # Trainable quantum parameters: [num_layers, num_qubits]
-        self.q_params = nn.Parameter(torch.rand(num_layers, self.num_qubits))
-
-        # Define QNode once with interface torch
-        self.qnode = qml.QNode(self.variational_circuit, self.dev, interface='torch', diff_method="backprop")
-
-    def variational_circuit(self, params, data_input):
-        """
-        Quantum circuit that now accepts a 'data_input' scalar.
-        'params' shape should be [num_layers, num_qubits]
-        """
+        self.dev = qml.device("default.qubit", wires=n_qubits)
         
-        # Scale data_input (e.g., mean of Ssup) to be an angle
-        # We map it to the range [-pi, pi]
-        scaled_data = torch.tanh(data_input) * np.pi
+        self.weight_shapes = {"weights": (n_layers, n_qubits, 3)}
+        
+        self.qnode = qml.QNode(self._circuit, self.dev, interface='torch', diff_method="backprop")
+        self.q_layer = qml.qnn.TorchLayer(self.qnode, self.weight_shapes)
 
-        # Layer 1: Encode first set of trainable parameters
-        for i in range(self.num_qubits):
-            qml.RY(params[0, i], wires=i)
+    def _circuit(self, inputs, weights):
+        for i in range(self.n_qubits):
+            qml.RX(inputs[..., i] * np.pi, wires=i)
+        for l in range(self.n_layers):
+            for i in range(self.n_qubits):
+                qml.Rot(weights[l, i, 0], weights[l, i, 1], weights[l, i, 2], wires=i)
+
+            for i in range(self.n_qubits):
+                qml.CNOT(wires=[i, (i + 1) % self.n_qubits])
+
+        return [qml.expval(qml.PauliZ(i)) for i in range(self.n_qubits)]
+
+    def forward(self, x):
+        return self.q_layer(x)
+
+class QuantumProjectionAttention(nn.Module):
+    def __init__(self, d_model, n_heads, n_qubits=4, q_layers=1, dropout=0.1):
+        """
+        Quantum-Classical Attention mechanism.
+        Combines classical attention with quantum-enhanced feature extraction.
+        """
+        super().__init__()
+        self.d_model = d_model
+        self.n_heads = n_heads
+        self.head_dim = d_model // n_heads
+        self.n_qubits = n_qubits
+
+        self.pre_q_proj = nn.Linear(self.head_dim, n_qubits)
+        self.pre_k_proj = nn.Linear(self.head_dim, n_qubits)
+
+        try:
+            print("using lighting")
+            import pennylane_lightning
+            self.dev_type = "lightning.qubit"
+        except ImportError:
+            print("NOT using lighting")
+            self.dev_type = "default.qubit"
             
-        # Layer 2: Encode the data
-        for i in range(self.num_qubits):
-            qml.RZ(scaled_data, wires=i) # Using data_input here
-       
-        # Layer 3: Entangle qubits
-        for i in range(self.num_qubits - 1):
-            qml.CNOT(wires=[i, i + 1])
-            
-        # Layer 4: Encode second set of trainable parameters
-        for i in range(self.num_qubits):
-            qml.RY(params[1, i], wires=i)
+        self.q_circuit = QuantumVariationalLayer(n_qubits, q_layers)
+        self.k_circuit = QuantumVariationalLayer(n_qubits, q_layers)
 
-        return qml.expval(qml.PauliZ(0))  # Scalar output
-
-    def compute_quantum_attention(self, x):
-        """
-        Computes quantum attention score.
-        """
-        # x has shape [B, H, L, S]
-        # We compress it to a single scalar to feed into the circuit.
-        # This is an information bottleneck, but respects the original
-        # code's structure of broadcasting a single scalar.
-        data_scalar = torch.mean(x)
+        self.post_q_proj = nn.Linear(n_qubits, self.head_dim)
+        self.post_k_proj = nn.Linear(n_qubits, self.head_dim)
         
-        # Pass both trainable params and the data-derived scalar
-        return self.qnode(self.q_params, data_scalar).float()
+        self.dropout = nn.Dropout(dropout)
+        self.scale = 1.0 / math.sqrt(self.head_dim)
+
+    def forward(self, queries, keys, values, attn_mask=None, tau=None, delta=None):
+        B, L, H, D = queries.shape
+        _, S, _, _ = keys.shape 
+        q = queries 
+        k = keys
+        v = values
+        q_q = self.pre_q_proj(q)
+        k_q = self.pre_k_proj(k)
+
+        q_flat = q_q.reshape(-1, self.n_qubits) 
+        k_flat = k_q.reshape(-1, self.n_qubits)
+        
+        q_flat = torch.tanh(q_flat)
+        k_flat = torch.tanh(k_flat)
+
+        q_out_flat = self.q_circuit(q_flat)
+        k_out_flat = self.k_circuit(k_flat)
+
+        q_out = self.post_q_proj(q_out_flat).view(B, L, H, D)
+        k_out = self.post_k_proj(k_out_flat).view(B, S, H, D)
+        
+        q_out = q_out.permute(0, 2, 1, 3)
+        k_out = k_out.permute(0, 2, 1, 3)
+        v = v.permute(0, 2, 1, 3) 
+        scores = torch.matmul(q_out, k_out.transpose(-2, -1)) * self.scale
+
+        if attn_mask is not None:
+
+            scores = scores.masked_fill(attn_mask == 0, -1e9)
+
+        attn = self.dropout(torch.softmax(scores, dim=-1))
+        
+
+        context = torch.matmul(attn, v) 
+        
+        context = context.permute(0, 2, 1, 3).contiguous()
+        
+        return context, attn
+
+class QuantumProjectionAttentionHybrid(nn.Module):
+    def __init__(self, d_model, n_heads, n_qubits=4, q_layers=1, dropout=0.1):
+        """
+        Quantum-Classical Attention mechanism with Hybrid Q/K.
+        Combines quantum-enhanced key/queries with classical keys/queries via concatenation.
+        """
+        super().__init__()
+        self.d_model = d_model
+        self.n_heads = n_heads
+        self.head_dim = d_model // n_heads
+        self.n_qubits = n_qubits
+
+        self.pre_q_proj = nn.Linear(self.head_dim, n_qubits)
+        self.pre_k_proj = nn.Linear(self.head_dim, n_qubits)
+
+        self.q_circuit = QuantumVariationalLayer(n_qubits, q_layers)
+        self.k_circuit = QuantumVariationalLayer(n_qubits, q_layers)
+
+        self.post_q_proj = nn.Linear(self.head_dim + n_qubits, self.head_dim)
+        self.post_k_proj = nn.Linear(self.head_dim + n_qubits, self.head_dim)
+
+        self.dropout = nn.Dropout(dropout)
+        self.scale = 1.0 / math.sqrt(self.head_dim)
 
     def forward(self, queries, keys, values, attn_mask=None):
+        B, L, H, D = queries.shape
+        _, S, _, _ = keys.shape
+        q = queries
+        k = keys
+        v = values
+
+        q_q = self.pre_q_proj(q) 
+        k_q = self.pre_k_proj(k) 
+
+        q_flat = torch.tanh(q_q.reshape(-1, self.n_qubits))
+        k_flat = torch.tanh(k_q.reshape(-1, self.n_qubits))
+        q_out_flat = self.q_circuit(q_flat)
+        k_out_flat = self.k_circuit(k_flat)
+        q_out = q_out_flat.view(B, L, H, self.n_qubits)
+        k_out = k_out_flat.view(B, S, H, self.n_qubits)
+
+
+        q_hybrid = torch.cat([q, q_out], dim=-1) 
+        k_hybrid = torch.cat([k, k_out], dim=-1)
+        q_proj = self.post_q_proj(q_hybrid)
+        k_proj = self.post_k_proj(k_hybrid)
+        q_proj = q_proj.permute(0,2,1,3)
+        k_proj = k_proj.permute(0,2,1,3)
+        v_proj = v.permute(0,2,1,3) 
+
+        scores = torch.matmul(q_proj, k_proj.transpose(-2,-1)) * self.scale
+        if attn_mask is not None:
+            scores = scores.masked_fill(attn_mask == 0, -1e9)
+
+        attn = self.dropout(torch.softmax(scores, dim=-1))
+        context = torch.matmul(attn, v_proj)
+        context = context.permute(0,2,1,3).contiguous()
+
+        return context, attn
+
+class QuantumKernelAttentionFidelity(nn.Module):
+    def __init__(self, d_model, n_heads, n_qubits=4, dropout=0.1, n_layers=2):
         """
-        Forward pass for the Quantum Attention.
+        Implementation inspired by Smaldone et al. (Molecular) approach.
+        Replaces Hadamard Test similarity mechanism with quantum fidelity mechanism.
         """
-        B, L, H, E = queries.shape
-        _, S, _, D = values.shape
-        scale = self.scale or 1. / sqrt(E)
+        super().__init__()
+        self.d_model = d_model
+        self.n_heads = n_heads
+        self.head_dim = d_model // n_heads
+        self.n_qubits = n_qubits
+        self.n_layers = n_layers # Depth of the quantum circuit
+        self.scale = 1.0 / math.sqrt(self.head_dim)
 
-        # 1. Classical superposition-based scores (Algorithm Line 12)
-        classical_scores = torch.einsum("blhe,bshe->bhls", queries, keys)
+        # Projections to latent quantum space
+        self.q_proj = nn.Linear(self.head_dim, n_qubits)
+        self.k_proj = nn.Linear(self.head_dim, n_qubits)
 
-        # 2. Quantum-based scores (Algorithm Line 13)
-        #    This is now data-dependent, using the mean of classical_scores
-        quantum_score = self.compute_quantum_attention(classical_scores).to(queries.device)
-        quantum_score = quantum_score.expand(B, H, L, S)  # broadcast
+        self.dropout = nn.Dropout(dropout)
+        
+        self.dev = qml.device("default.qubit", wires=n_qubits)
+        
+        self.qnode = qml.QNode(self.fidelity_circuit, self.dev, interface='torch', diff_method="backprop")
 
-        # 3. Entanglement-based scores (Algorithm Line 14)
-        entanglement_scores = torch.einsum("blhd,bshe->bhls", values, keys)
+    def feature_map(self, angles):
+        for l in range(self.n_layers):
+            for i in range(self.n_qubits):
+                qml.Hadamard(wires=i)
+                qml.RZ(angles[..., i], wires=i)
+            # Entanglement layer
+            # creates the non-separable kernel space crucial for molecules
+            for i in range(self.n_qubits - 1):
+                qml.CNOT(wires=[i, i + 1])
+                qml.RZ(angles[..., i] * angles[..., i+1], wires=i+1) 
+                qml.CNOT(wires=[i, i + 1])
 
-        scores = classical_scores + quantum_score + (self.entanglement_factor * entanglement_scores)
+    def feature_map_inverse(self, angles):
+        """Inverse of the feature map (Adjoint)."""
+        for l in range(self.n_layers - 1, -1, -1):
+            for i in range(self.n_qubits - 2, -1, -1):
+                qml.CNOT(wires=[i, i + 1])
+                qml.RZ(-angles[..., i] * angles[..., i+1], wires=i+1)
+                qml.CNOT(wires=[i, i + 1])
 
-        # Apply mask
-        if self.mask_flag:
-            if attn_mask is None:
-                attn_mask = torch.triu(torch.ones(L, S), diagonal=1).bool().to(queries.device)
-            scores.masked_fill_(attn_mask.unsqueeze(0).unsqueeze(0), -float('inf'))
+            for i in range(self.n_qubits):
+                qml.RZ(-angles[..., i], wires=i)
+                qml.Hadamard(wires=i) 
 
-        # Softmax normalization and dropout
-        A = self.dropout(F.softmax(scale * scores, dim=-1))
+    def fidelity_circuit(self, q_angles, k_angles):
+        self.feature_map(q_angles)
 
-        # Weighted sum of values
-        V = torch.einsum("bhls,bshd->blhd", A, values)
+        self.feature_map_inverse(k_angles)
 
-        return (V.contiguous(), A) if self.output_attention else (V.contiguous(), None)
+        # Measure probability of all-zero state
+        return qml.probs(wires=range(self.n_qubits))
+
+    def forward(self, queries, keys, values, attn_mask=None):
+        B, L, H, D = queries.shape
+        _, S, _, _ = keys.shape
+
+        # project inputs to angles
+        q_angles = torch.tanh(self.q_proj(queries)) * np.pi
+        k_angles = torch.tanh(self.k_proj(keys)) * np.pi
+
+        # Broadcasting preparation
+        q_exp = q_angles.permute(0, 2, 1, 3).unsqueeze(3)
+        k_exp = k_angles.permute(0, 2, 1, 3).unsqueeze(2)
+        
+        target_shape = (B, H, L, S, self.n_qubits)
+        q_broad = q_exp.expand(target_shape)
+        k_broad = k_exp.expand(target_shape)
+
+        total_evals = B * H * L * S
+        q_flat = q_broad.reshape(total_evals, self.n_qubits)
+        k_flat = k_broad.reshape(total_evals, self.n_qubits)
+
+        # compute quantum attention scores (Fidelity)
+        probs = self.qnode(q_flat, k_flat)
+        
+        # measurement of 0 state
+        attn_scores_flat = probs[:, 0]
+        
+        attn_scores_flat = attn_scores_flat.type_as(queries)
+        attn_scores = attn_scores_flat.view(B, H, L, S)
+
+        if attn_mask is not None:
+            attn_scores = attn_scores.masked_fill(attn_mask == 0, 0) 
+
+        attn_weights = attn_scores / (attn_scores.sum(dim=-1, keepdim=True) + 1e-6)
+        
+        attn_weights = self.dropout(attn_weights)
+
+        v = values.permute(0, 2, 1, 3)
+        
+        context = torch.matmul(attn_weights, v) 
+        
+        context = context.permute(0, 2, 1, 3).contiguous() 
+
+        return context, attn_weights
+
+
+class QuantumKernelAttentionHadamard(nn.Module):
+    def __init__(self, d_model, n_heads, n_qubits=4, n_layers=1, dropout=0.1):
+        """
+        Pennylane Implementation inspired by Smaldone et al. (Molecular) approach.
+        Uses Hadamard Test similarity mechanism with ancilla qubit.
+        EXTREMELY SLOW compared to fidelity approach.
+        """
+        super().__init__()
+        self.d_model = d_model
+        self.n_heads = n_heads
+        self.head_dim = d_model // n_heads
+        self.n_qubits = n_qubits
+        self.n_layers = n_layers 
+        
+        self.n_params = n_qubits * n_layers
+        self.q_proj = nn.Linear(self.head_dim, self.n_params)
+        self.k_proj = nn.Linear(self.head_dim, self.n_params)
+
+        self.dropout = nn.Dropout(dropout)
+        
+        try:
+            self.dev = qml.device("lightning.qubit", wires=n_qubits + 1) # for ancilla qubit
+        except:
+            self.dev = qml.device("default.qubit", wires=n_qubits + 1)
+            
+        #self.qnode = qml.QNode(self.hadamard_test_circuit, self.dev, interface='torch', diff_method="backprop")
+        self.qnode = qml.QNode(self.hadamard_test_circuit, self.dev, interface='torch', diff_method="adjoint")
+
+
+    def ansatz(self, params, wires):
+        shape = params.shape
+        new_shape = shape[:-1] + (self.n_layers, self.n_qubits)
+        params = params.reshape(new_shape)
+
+        for l in range(self.n_layers):
+            for i in range(self.n_qubits):
+                qml.RY(params[..., l, i], wires=wires[i])
+            
+            # Entanglement Layer (Ring CNOTs)
+            if self.n_qubits > 1:
+                for i in range(self.n_qubits):
+                    qml.CNOT(wires=[wires[i], wires[(i + 1) % self.n_qubits]])
+
+    def hadamard_test_circuit(self, q_params, k_params):
+
+        ancilla = self.n_qubits  # idc of ancilla wire
+        data_wires = range(self.n_qubits)
+
+        # initialize ancilla
+        qml.Hadamard(wires=ancilla)
+
+        qml.ctrl(self.ansatz, control=ancilla)(q_params, wires=data_wires)
+        qml.adjoint(qml.ctrl(self.ansatz, control=ancilla))(k_params, wires=data_wires)
+
+        # final interference
+        qml.Hadamard(wires=ancilla)
+        return qml.expval(qml.PauliZ(wires=ancilla))
+
+    def forward(self, queries, keys, values, attn_mask=None, tau=None, delta=None):
+        B, L, H, D = queries.shape
+        _, S, _, _ = keys.shape
+
+        q_params = torch.tanh(self.q_proj(queries)) * np.pi 
+        k_params = torch.tanh(self.k_proj(keys)) * np.pi
+
+        q_broad = q_params.permute(0, 2, 1, 3).unsqueeze(3)
+        k_broad = k_params.permute(0, 2, 1, 3).unsqueeze(2)
+        
+        target_shape = (B, H, L, S, self.n_params)
+        q_broad = q_broad.expand(target_shape)
+        k_broad = k_broad.expand(target_shape)
+        
+        q_flat = q_broad.reshape(-1, self.n_params)
+        k_flat = k_broad.reshape(-1, self.n_params)
+
+        attn_scores_flat = self.qnode(q_flat, k_flat)
+        
+        attn_scores_flat = attn_scores_flat.type_as(queries)
+        
+        attn_scores = attn_scores_flat.view(B, H, L, S)
+
+        attn_scores = attn_scores / math.sqrt(self.head_dim)
+
+        if attn_mask is not None:
+            attn_scores = attn_scores.masked_fill(attn_mask == 0, -1e9)
+
+        attn_weights = torch.softmax(attn_scores, dim=-1)
+        attn_weights = self.dropout(attn_weights)
+
+        v = values.permute(0, 2, 1, 3)
+        context = torch.matmul(attn_weights, v).permute(0, 2, 1, 3).contiguous()
+
+        return context, attn_weights
+
