@@ -11,24 +11,24 @@ Contains the actual benchmark scripts for the quantum and classical device bench
 
 ### /process_csv
 Contains the script for normalizing the raw throughputs, and the normalized throughput results.
-All the results are stored in csvs in `/process_csv`.
+All the results below are stored in csvs in `/process_csv/QQQ_hardware_runs`.
 #### Rigetti ankaa3
 ```
-/QQQ_hardware_runs/quantum_results_ankaa3.csv
+/process_csv/QQQ_hardware_runs/quantum_results_ankaa3.csv
 ```
 
 #### IQM Emerald
 ```
-/QQQ_hardware_runs/quantum_results_iqm_emerald.csv
+/process_csv/QQQ_hardware_runs/quantum_results_iqm_emerald.csv
 ```
 
 #### IQM Garnet
 ```
-/QQQ_hardware_runs/quantum_results_iqm_garnet.csv
+/process_csv/QQQ_hardware_runs/quantum_results_iqm_garnet.csv
 
 ```
 
 #### IonQ Forte
 ```
-/QQQ_hardware_runs/quantum_results_ionq_forte_150_shots.csv
+/process_csv/QQQ_hardware_runs/quantum_results_ionq_forte_150_shots.csv
 ```
