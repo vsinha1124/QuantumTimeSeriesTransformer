@@ -230,7 +230,7 @@ class QuixerCore_TQ(nn.Module):
         out = self.measure(self.tq_device)        # [B, 3, n_qubits]
         out = out.reshape(B, -1)  # [B, 3*n_qubits]
         return out.float()
-        
+
 class QuixerAttentionLayer_OptionC(nn.Module):
     def __init__(self, d_model, n_qubits=4, n_tokens=96, qsvt_degree=2, n_ansatz_layers=1, device="cuda"):
         super().__init__()
@@ -247,17 +247,6 @@ class QuixerAttentionLayer_OptionC(nn.Module):
 
         self.linear = nn.Linear(3 * n_qubits, d_model)
 
-    # def forward(self, queries, keys, values, attn_mask=None, tau=None, delta=None):
-    #     B, L, D = values.shape
-    #     outputs = []
-
-    #     for b in range(B):
-    #         qvec = self.core(values[b])     # [3*n_qubits]
-    #         outputs.append(self.linear(qvec))  # [D]
-
-    #     global_vecs = torch.stack(outputs).unsqueeze(1).expand(B, L, D)
-    #     out = values + global_vecs
-    #     return out, None
     def forward(self, Q, K, V, attn_mask=None, tau=None, delta=None):
         B, L, D = V.shape
 
@@ -266,3 +255,63 @@ class QuixerAttentionLayer_OptionC(nn.Module):
         exps = self.linear(exps)  # [B, D]
 
         return V + exps.unsqueeze(1).expand(-1, L, -1), None
+        
+class QuixerAttentionLayer_CrossAttentionFusion(nn.Module):
+    def __init__(self, d_model, n_qubits=4, n_tokens=96, qsvt_degree=2, n_ansatz_layers=1, device="cuda", n_heads=8):
+        super().__init__()
+        self.d_model = d_model
+        self.n_heads = n_heads
+        self.head_dim = d_model // n_heads
+
+        self.core = QuixerCore_TQ(
+            n_qubits=n_qubits,
+            n_tokens=n_tokens,
+            d_model=d_model,
+            qsvt_degree=qsvt_degree,
+            n_ansatz_layers=n_ansatz_layers,
+            device=device,
+        )
+
+        # Project quantum global to query
+        self.quantum_to_query = nn.Linear(3 * n_qubits, d_model)
+        
+        # Standard attention components
+        self.q_proj = nn.Linear(d_model, d_model)
+        self.k_proj = nn.Linear(d_model, d_model)
+        self.v_proj = nn.Linear(d_model, d_model)
+        self.out_proj = nn.Linear(d_model, d_model)
+
+    def forward(self, Q, K, V, attn_mask=None, tau=None, delta=None):
+        B, L, D = V.shape
+
+        # Get quantum global context
+        quantum_global = self.core(V)  # [B, 3*n_qubits]
+        quantum_query = self.quantum_to_query(quantum_global).view(B, 1, D)  # [B, 1, D]
+
+        # Project V to keys and values
+        K = self.k_proj(V)  # [B, L, D]
+        V_proj = self.v_proj(V)  # [B, L, D]
+
+        # Add quantum query to the sequence
+        K = torch.cat([quantum_query, K], dim=1)  # [B, L+1, D]
+        V_proj = torch.cat([quantum_query, V_proj], dim=1)  # [B, L+1, D]
+
+        # Multi-head attention with quantum query attending to all
+        Q = self.q_proj(quantum_query)  # [B, 1, D]
+        
+        # Split heads
+        Q = Q.view(B, 1, self.n_heads, self.head_dim).transpose(1, 2)  # [B, n_heads, 1, head_dim]
+        K = K.view(B, L+1, self.n_heads, self.head_dim).transpose(1, 2)  # [B, n_heads, L+1, head_dim]
+        V_proj = V_proj.view(B, L+1, self.n_heads, self.head_dim).transpose(1, 2)  # [B, n_heads, L+1, head_dim]
+
+        # Attention
+        scores = torch.matmul(Q, K.transpose(-2, -1)) / (self.head_dim ** 0.5)  # [B, n_heads, 1, L+1]
+        attn_weights = torch.softmax(scores, dim=-1)  # [B, n_heads, 1, L+1]
+        attn_output = torch.matmul(attn_weights, V_proj)  # [B, n_heads, 1, D//n_heads]
+
+        # Merge heads
+        attn_output = attn_output.transpose(1, 2).contiguous().view(B, 1, D)  # [B, 1, D]
+        fused = self.out_proj(attn_output)  # [B, 1, D]
+
+        # Broadcast to all positions
+        return V + fused.expand(-1, L, -1), None

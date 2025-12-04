@@ -4,6 +4,11 @@
 export CUDA_VISIBLE_DEVICES=0
 
 # Quixer Quantum Attention Configuration Options:
+# --quixer_option:
+#   "A" - Subsampled PennyLane (32 tokens, moderate speed, ~4-6h per epoch)
+#   "B" - Full PennyLane (96 tokens, very slow, ~16-17h per epoch) 
+#   "C" - TorchQuantum fast (96 tokens, GPU-accelerated, ~30-40min per epoch) [RECOMMENDED]
+#
 # --quantum_attention_mode:
 #   "full"        - All encoder layers use Quixer quantum attention
 #   "alternating" - Even layers quantum, odd layers classical (default)
@@ -34,11 +39,12 @@ python -u run.py \
   --c_out 21 \
   --des 'Exp' \
   --itr 1 \
-  --train_epochs 3 \
+  --train_epochs 10 \
   --batch_size 32 \
   --num_workers 8 \
   --use_quantum_attention 1 \
   --quantum_attention_mode full \
+  --quixer_option C \
   --n_qubits 6 \
   --qsvt_polynomial_degree 2 \
   --n_ansatz_layers 2

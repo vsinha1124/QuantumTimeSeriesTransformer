@@ -90,6 +90,8 @@ if __name__ == '__main__':
                         help='whether to use Quixer quantum attention (1: True, 0: False)')
     parser.add_argument('--quantum_attention_mode', type=str, default='alternating', 
                         help='quantum attention mode: "full" (all layers quantum), "alternating" (even layers quantum), "classical" (all classical)')
+    parser.add_argument('--quixer_option', type=str, default='C',
+                        help='Quixer implementation option: "A" (32 tokens, PennyLane), "B" (96 tokens, PennyLane, slow), "C" (96 tokens, TorchQuantum, fast)')
     parser.add_argument('--n_qubits', type=int, default=4, 
                         help='number of qubits for quantum circuits in Quixer attention')
     parser.add_argument('--qsvt_polynomial_degree', type=int, default=2, 

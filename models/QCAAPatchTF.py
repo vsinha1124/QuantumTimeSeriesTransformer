@@ -1,14 +1,14 @@
 
-#Advanced Patch Embedding Transformer with Quantum Attention            
+# Advanced Patch Embedding Transformer with Quantum Attention
+# Supports multiple Quixer quantum attention implementations (A, B, C)
 
 import torch
 from torch import nn
 from layers.Transformer_EncDec import Encoder, EncoderLayer
-from layers.SelfAttention_Family import FullAttention, AttentionLayer, QuantumAttention
-from layers.QuixerAttention_old import QuixerAttentionLayer
-from layers.Quixer import QuixerCore, QuixerAttentionLayer_OptionA
+from layers.SelfAttention_Family import FullAttention, AttentionLayer
+from layers.Quixer import QuixerAttentionLayer_OptionA
 from layers.Quixer_no_unitaries import QuixerAttentionLayer_OptionB
-from layers.Quixer_torchQuantum import QuixerAttentionLayer_OptionC
+from layers.Quixer_torchQuantum import QuixerAttentionLayer_OptionC, QuixerAttentionLayer_CrossAttentionFusion
 from layers.Embed import PatchEmbedding
 import numpy as np
 
@@ -70,11 +70,50 @@ class Model(nn.Module):
 
 
         # Encoder with Configurable Quixer Quantum Attention
-        self.use_quantum_attention = getattr(configs, "use_quantum_attention", True)  # Use Quixer by default
-        self.quantum_attention_mode = getattr(configs, "quantum_attention_mode", "alternating")  # Mode: full/alternating/classical
-        self.n_qubits = getattr(configs, "n_qubits", 4)  # Number of qubits for Quixer
-        self.qsvt_degree = getattr(configs, "qsvt_polynomial_degree", 2)  # QSVT polynomial degree
-        self.n_ansatz_layers = getattr(configs, "n_ansatz_layers", 1)  # PQC layers
+        self.use_quantum_attention = getattr(configs, "use_quantum_attention", True)
+        self.quantum_attention_mode = getattr(configs, "quantum_attention_mode", "alternating")  # full/alternating/classical
+        self.quixer_option = getattr(configs, "quixer_option", "C")  # A/B/C - determines Quixer implementation
+        self.n_qubits = getattr(configs, "n_qubits", 4)
+        self.qsvt_degree = getattr(configs, "qsvt_polynomial_degree", 2)
+        self.n_ansatz_layers = getattr(configs, "n_ansatz_layers", 1)
+        
+        # Select Quixer attention implementation based on option
+        def get_quixer_layer(layer_idx):
+            if self.quixer_option == "A":
+                return QuixerAttentionLayer_OptionA(
+                    d_model=configs.d_model,
+                    n_qubits=self.n_qubits,
+                    n_tokens=32,  # Option A subsamples to 32 tokens
+                    qsvt_degree=self.qsvt_degree,
+                    n_ansatz_layers=self.n_ansatz_layers,
+                    dev_name="lightning.qubit",
+                    output_attention=configs.output_attention,
+                )
+            elif self.quixer_option == "B":
+                return QuixerAttentionLayer_OptionB(
+                    d_model=configs.d_model,
+                    n_qubits=self.n_qubits,
+                    n_tokens=96,  # Option B uses all 96 tokens with PennyLane
+                    qsvt_degree=self.qsvt_degree,
+                    n_ansatz_layers=self.n_ansatz_layers,
+                    dev_name="lightning.qubit",
+                    output_attention=configs.output_attention,
+                )
+            else:  # Option C (default)
+                return QuixerAttentionLayer_CrossAttentionFusion(
+                    d_model=configs.d_model,
+                    n_qubits=self.n_qubits,
+                    n_tokens=96,  # Option C uses all 96 tokens with TorchQuantum
+                    qsvt_degree=self.qsvt_degree,
+                    n_ansatz_layers=self.n_ansatz_layers,
+                    device="cuda",
+                    n_heads=configs.n_heads,
+                )
+        
+        if self.use_quantum_attention and self.quantum_attention_mode != "classical":
+            print(f"Using Quixer Option {self.quixer_option} ({self.quantum_attention_mode} mode) with {self.n_qubits} qubits, QSVT degree {self.qsvt_degree}")
+        else:
+            print("Using Classical Attention (Full)")
         
         # Determine which layers should use quantum attention
         def use_quantum_for_layer(layer_idx):
@@ -87,33 +126,10 @@ class Model(nn.Module):
             else:
                 return False
         
-        if self.use_quantum_attention and self.quantum_attention_mode != "classical":
-            print(f"Using Quixer Quantum Attention ({self.quantum_attention_mode} mode) with {self.n_qubits} qubits, QSVT degree {self.qsvt_degree}")
-        else:
-            print("Using Classical Attention (Full)")
-        
         self.encoder = Encoder(
             [
                 EncoderLayer(
-                    # Use Quixer or Classical attention based on mode
-                    # QuixerAttentionLayer(
-                    #     n_qubits=self.n_qubits,
-                    #     qsvt_polynomial_degree=self.qsvt_degree,
-                    #     n_ansatz_layers=self.n_ansatz_layers,
-                    #     d_model=configs.d_model,
-                    #     n_heads=configs.n_heads,
-                    #     mask_flag=False,
-                    #     attention_dropout=configs.dropout,
-                    #     output_attention=configs.output_attention,
-                    # ) if use_quantum_for_layer(i)
-                    QuixerAttentionLayer_OptionC(
-                        d_model=configs.d_model,
-                        n_qubits=self.n_qubits,
-                        n_tokens=96,                                  
-                        qsvt_degree=self.qsvt_degree,
-                        n_ansatz_layers=self.n_ansatz_layers,
-                        device="cuda",                
-                    ) if use_quantum_for_layer(i)
+                    get_quixer_layer(i) if use_quantum_for_layer(i)
                     else AttentionLayer(
                         FullAttention(
                             mask_flag=False,
