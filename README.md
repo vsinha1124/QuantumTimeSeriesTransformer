@@ -91,9 +91,12 @@ pip install pennylane pennylane-lightning
 pip install torchquantum
 ```
 ## Usage Examples
+```
+ bash /home/ubuntu/QuantumTimeSeriesTransformer/scripts/long_term_forecast/Weather_script/QCAAPatchTF.sh
+```
 
 ### Option A: Subsampled PennyLane (Moderate Speed but lower context, worst prediction results)
-
+You can also run with following, or change the QCAAPatchTF.sh configs like below
 ```bash
 python run.py \
   --task_name long_term_forecast \
