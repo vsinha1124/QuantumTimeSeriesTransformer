@@ -49,7 +49,7 @@ git checkout Quixer
 # For classical benchmarks
 git checkout benchmark
 
-# For PQC approach (once available)
+# For PQC approach 
 git checkout PQC
 ```
 
